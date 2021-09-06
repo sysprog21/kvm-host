@@ -1,0 +1,8 @@
+*.o
+*.o.d
+*.dSYM
+.vscode
+.devcontainer
+core*
+kvm-host
+build
