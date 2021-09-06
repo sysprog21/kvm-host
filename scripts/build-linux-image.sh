@@ -11,7 +11,7 @@ function download_linux()
     echo "Downloading Linux kernel version ${LINUX_VER}..."
     wget -c ${LINUX_DL} -O ${OUT}/${ARCHIVE} || exit 1
     echo "Extracting..."
-    tar -xvf ${OUT}/${ARCHIVE} -C ${OUT} || exit 1
+    tar -xf ${OUT}/${ARCHIVE} -C ${OUT} || exit 1
 }
 
 function build_linux()
@@ -19,7 +19,7 @@ function build_linux()
    echo "Configuring Linux kernel..."
    cp -f scripts/tiny.config ${OUT}/linux-${LINUX_VER}/.config
    pushd ${OUT}/linux-${LINUX_VER}
-   make oldconfig || exit 1
+   make ARCH=x86 oldconfig || exit 1
    echo "Building Linux kernel image..."
    make ARCH=x86 bzImage -j`nproc` || exit 1
    cp -f arch/x86/boot/bzImage ..
