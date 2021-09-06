@@ -3,7 +3,8 @@ CFLAGS = -O2
 CFLAGS += -Wall -std=gnu99
 CFLAGS += -g
 
-BIN = kvm-host
+OUT ?= build
+BIN = $(OUT)/kvm-host
 
 all: $(BIN)
 
@@ -17,23 +18,24 @@ else
 endif
 
 OBJS := kvm-host.o
-deps := $(OBJS:%.o=.%.o.d)
+OBJS := $(addprefix $(OUT)/,$(OBJS))
+deps := $(OBJS:%.o=%.o.d)
 
-kvm-host: $(OBJS)
+$(BIN): $(OBJS)
 	$(VECHO) "  LD\t$@\n"
 	$(Q)$(CC) $(LDFLAGS) -o $@ $^
 
-%.o: %.c
-	@mkdir -p .$(DUT_DIR)
+$(OUT)/%.o: %.c
+	@mkdir -p $(OUT)
 	$(VECHO) "  CC\t$@\n"
-	$(Q)$(CC) -o $@ $(CFLAGS) -c -MMD -MF .$@.d $<
+	$(Q)$(CC) -o $@ $(CFLAGS) -c -MMD -MF $@.d $<
 
-build/bzImage:
+$(OUT)/bzImage:
 	$(VECHO) "Download and build Linux kernel. Be patient!\n"
 	$(Q)scripts/build-linux-image.sh
 
 check: $(BIN) build/bzImage
-	$(VECHO) "Once the message 'Kernel panic' appears, press ctrl-c to exit\n"
+	$(VECHO) "\nOnce the message 'Kernel panic' appears, press ctrl-c to exit\n"
 	sudo ./$^
 
 clean:
