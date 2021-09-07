@@ -18,6 +18,7 @@
 #include <unistd.h>
 
 #define RAM_SIZE (1 << 30)
+#define KERNEL_OPTS "console=ttyS0"
 
 typedef struct {
     int kvm_fd, vm_fd, vcpu_fd;
@@ -158,7 +159,7 @@ int vm_load(vm_t *v, const char *image_path)
     boot->hdr.ext_loader_ver = 0x0;
     boot->hdr.cmd_line_ptr = 0x20000;
     memset(cmdline, 0, boot->hdr.cmdline_size);
-    memcpy(cmdline, "console=ttyS0", 14);
+    memcpy(cmdline, KERNEL_OPTS, sizeof(KERNEL_OPTS));
     memmove(kernel, (char *) data + setupsz, datasz - setupsz);
     return 0;
 }
