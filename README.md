@@ -1,6 +1,6 @@
 # kvm-host
 
-`kvm-host` is a minimalist type 2 hypervisor using Linux Kernel Virtual Machine (KVM),
+`kvm-host` is a minimalist type 2 hypervisor using Linux [Kernel-based Virtual Machine](https://en.wikipedia.org/wiki/Kernel-based_Virtual_Machine) (KVM),
 capable of running Linux kernel partially.
 
 ## Build and Run
