@@ -38,5 +38,6 @@ a BSD-style license that can be found in the LICENSE file.
 * [KVM (Kernel-based Virtual Machine) API](https://www.kernel.org/doc/Documentation/virtual/kvm/api.txt)
 * [The Linux/x86 Boot Protocol](https://www.kernel.org/doc/html/latest/x86/boot.html)
 * [Using the KVM API](https://lwn.net/Articles/658511/)
+* [gokvm](https://github.com/bobuhiro11/gokvm)
 * [KVM Host in a few lines of code](https://zserge.com/posts/kvm/)
 * [crosvm - The Chrome OS Virtual Machine Monitor](https://chromium.googlesource.com/chromiumos/platform/crosvm/)
