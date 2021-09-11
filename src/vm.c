@@ -1,15 +1,10 @@
-#if !defined(__x86_64__) || !defined(__linux__)
-#error "This virtual machine requires Linux/x86_64."
-#endif
-
 #include <asm/bootparam.h>
+
 #include <linux/kvm.h>
 #include <linux/kvm_para.h>
 
-#include <errno.h>
 #include <fcntl.h>
 #include <stdint.h>
-#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/ioctl.h>
@@ -17,19 +12,8 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-#define RAM_SIZE (1 << 30)
-#define KERNEL_OPTS "console=ttyS0"
-
-typedef struct {
-    int kvm_fd, vm_fd, vcpu_fd;
-    void *mem;
-} vm_t;
-
-static int throw_err(const char *str)
-{
-    fprintf(stderr, "%s (errno=%d)\n", str, errno);
-    return -1;
-}
+#include "err.h"
+#include "vm.h"
 
 static int vm_init_regs(vm_t *v)
 {
@@ -164,14 +148,6 @@ int vm_load(vm_t *v, const char *image_path)
     return 0;
 }
 
-void vm_exit(vm_t *v)
-{
-    close(v->kvm_fd);
-    close(v->vm_fd);
-    close(v->vcpu_fd);
-    munmap(v->mem, RAM_SIZE);
-}
-
 int vm_run(vm_t *v)
 {
     int run_size = ioctl(v->kvm_fd, KVM_GET_VCPU_MMAP_SIZE, 0);
@@ -202,19 +178,10 @@ int vm_run(vm_t *v)
     }
 }
 
-int main(int argc, char *argv[])
+void vm_exit(vm_t *v)
 {
-    if (argc != 2)
-        return fprintf(stderr, "Usage: %s [filename]\n", argv[0]);
-
-    vm_t vm;
-    if (vm_init(&vm) < 0)
-        return throw_err("Failed to initialize guest vm");
-
-    if (vm_load(&vm, argv[1]) < 0)
-        return throw_err("Failed to load guest image");
-
-    vm_run(&vm);
-    vm_exit(&vm);
-    return 0;
+    close(v->kvm_fd);
+    close(v->vm_fd);
+    close(v->vcpu_fd);
+    munmap(v->mem, RAM_SIZE);
 }
