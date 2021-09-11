@@ -1,4 +1,9 @@
+#if !defined(__x86_64__) || !defined(__linux__)
+#error "This virtual machine requires Linux/x86_64."
+#endif
+
 #include <asm/bootparam.h>
+#include <asm/e820.h>
 
 #include <linux/kvm.h>
 #include <linux/kvm_para.h>
@@ -112,7 +117,7 @@ int vm_init(vm_t *v)
     return 0;
 }
 
-int vm_load(vm_t *v, const char *image_path)
+int vm_load_image(vm_t *v, const char *image_path)
 {
     int fd = open(image_path, O_RDONLY);
     if (fd < 0)
@@ -136,8 +141,6 @@ int vm_load(vm_t *v, const char *image_path)
     size_t setupsz = (setup_sectors + 1) * 512;
     boot->hdr.vid_mode = 0xFFFF;  // VGA
     boot->hdr.type_of_loader = 0xFF;
-    boot->hdr.ramdisk_image = 0x0;
-    boot->hdr.ramdisk_size = 0x0;
     boot->hdr.loadflags |= CAN_USE_HEAP | 0x01 | KEEP_SEGMENTS;
     boot->hdr.heap_end_ptr = 0xFE00;
     boot->hdr.ext_loader_ver = 0x0;
@@ -145,6 +148,56 @@ int vm_load(vm_t *v, const char *image_path)
     memset(cmdline, 0, boot->hdr.cmdline_size);
     memcpy(cmdline, KERNEL_OPTS, sizeof(KERNEL_OPTS));
     memmove(kernel, (char *) data + setupsz, datasz - setupsz);
+
+    /* setup E820 memory map to report usable memory address ranges for initrd
+     */
+    unsigned int idx = 0;
+    boot->e820_table[idx++] = (struct boot_e820_entry){
+        .addr = 0x0,
+        .size = ISA_START_ADDRESS - 1,
+        .type = E820_RAM,
+    };
+    boot->e820_table[idx++] = (struct boot_e820_entry){
+        .addr = ISA_END_ADDRESS,
+        .size = RAM_SIZE - ISA_END_ADDRESS,
+        .type = E820_RAM,
+    };
+    boot->e820_entries = idx;
+
+    return 0;
+}
+
+int vm_load_initrd(vm_t *v, const char *initrd_path)
+{
+    int fd = open(initrd_path, O_RDONLY);
+    if (fd < 0)
+        return 1;
+
+    struct stat st;
+    fstat(fd, &st);
+    size_t datasz = st.st_size;
+    void *data = mmap(0, datasz, PROT_READ | PROT_WRITE, MAP_PRIVATE, fd, 0);
+    close(fd);
+
+    struct boot_params *boot =
+        (struct boot_params *) ((uint8_t *) v->mem + 0x10000);
+    unsigned long addr = boot->hdr.initrd_addr_max & ~0xfffff;
+
+    for (;;) {
+        if (addr < 0x100000)
+            return throw_err("Not enough memory for initrd");
+        else if (addr < (RAM_SIZE - datasz))
+            break;
+        addr -= 0x100000;
+    }
+
+    void *initrd = ((uint8_t *) v->mem) + addr;
+
+    memset(initrd, 0, datasz);
+    memmove(initrd, data, datasz);
+
+    boot->hdr.ramdisk_image = addr;
+    boot->hdr.ramdisk_size = datasz;
     return 0;
 }
 
