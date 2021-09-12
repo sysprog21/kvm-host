@@ -17,7 +17,7 @@ else
     VECHO = @printf
 endif
 
-OBJS := kvm-host.o
+OBJS := vm.o kvm-host.o
 OBJS := $(addprefix $(OUT)/,$(OBJS))
 deps := $(OBJS:%.o=%.o.d)
 
@@ -25,7 +25,7 @@ $(BIN): $(OBJS)
 	$(VECHO) "  LD\t$@\n"
 	$(Q)$(CC) $(LDFLAGS) -o $@ $^
 
-$(OUT)/%.o: %.c
+$(OUT)/%.o: src/%.c
 	@mkdir -p $(OUT)
 	$(VECHO) "  CC\t$@\n"
 	$(Q)$(CC) -o $@ $(CFLAGS) -c -MMD -MF $@.d $<
@@ -34,7 +34,11 @@ $(OUT)/bzImage:
 	$(VECHO) "Download and build Linux kernel. Be patient!\n"
 	$(Q)scripts/build-linux-image.sh
 
-check: $(BIN) build/bzImage
+$(OUT)/rootfs.cpio:
+	$(VECHO) "Download and build busybox. Be patient!\n"
+	$(Q)scripts/build-initrd.sh
+
+check: $(BIN) build/bzImage build/rootfs.cpio
 	$(VECHO) "\nOnce the message 'Kernel panic' appears, press ctrl-c to exit\n"
 	sudo ./$^
 

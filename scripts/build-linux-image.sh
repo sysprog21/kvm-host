@@ -4,14 +4,14 @@ source scripts/common.sh
 
 readonly LINUX_VER=5.14.1
 readonly LINUX_DL="https://cdn.kernel.org/pub/linux/kernel/v5.x/linux-${LINUX_VER}.tar.xz"
-readonly ARCHIVE=linux.tar.xz
+readonly LINUX_ARCHIVE=linux.tar.xz
 
 function download_linux()
 {
     echo "Downloading Linux kernel version ${LINUX_VER}..."
-    wget -c ${LINUX_DL} -O ${OUT}/${ARCHIVE} || exit 1
+    wget -c ${LINUX_DL} -O ${OUT}/${LINUX_ARCHIVE} || exit 1
     echo "Extracting..."
-    tar -xf ${OUT}/${ARCHIVE} -C ${OUT} || exit 1
+    tar -xf ${OUT}/${LINUX_ARCHIVE} -C ${OUT} || exit 1
 }
 
 function build_linux()
