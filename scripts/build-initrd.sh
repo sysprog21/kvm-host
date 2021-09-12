@@ -18,7 +18,11 @@ function build_busybox()
 {
    echo "Building Busybox..."
    cp -f scripts/busybox.config ${OUT}/busybox-${BUSYBOX_VER}/.config
-   make -j `nproc` -C ${OUT}/busybox-${BUSYBOX_VER} all install || exit 1
+   pushd ${OUT}/busybox-${BUSYBOX_VER}
+   make oldconfig || exit 1
+   make -j `nproc` || exit 1
+   make install || exit 1
+   popd
 }
 
 function generate_rootfs()
