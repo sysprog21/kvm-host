@@ -3,14 +3,13 @@
 source scripts/common.sh
 
 readonly LINUX_DL="https://cdn.kernel.org/pub/linux/kernel/v5.x/linux-${LINUX_VER}.tar.xz"
-readonly LINUX_ARCHIVE=linux.tar.xz
 
 function download_linux()
 {
     echo "Downloading Linux kernel version ${LINUX_VER}..."
-    download linux || exit 1
+    download linux
     echo "Extracting..."
-    tar -xf ${OUT}/${LINUX_ARCHIVE} -C ${OUT} || exit 1
+    extract linux
 }
 
 function build_linux()

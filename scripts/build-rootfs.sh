@@ -3,14 +3,13 @@
 source scripts/common.sh
 
 readonly BUSYBOX_DL="https://busybox.net/downloads/busybox-${BUSYBOX_VER}.tar.bz2"
-readonly BUSYBOX_ARCHIVE=busybox.tar.bz2
 
 function download_busybox()
 {
     echo "Downloading Busybox version ${BUSYBOX_VER}..."
-    download busybox || exit 1
+    download busybox
     echo "Extracting..."
-    tar -xjf ${OUT}/${BUSYBOX_ARCHIVE} -C ${OUT} || exit 1
+    extract busybox
 }
 
 function build_busybox()

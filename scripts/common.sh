@@ -2,6 +2,11 @@
 readonly LINUX_VER=5.14.3
 readonly BUSYBOX_VER=1.34.0
 
+# SHA Checksums (default: SHA-1)
+# TODO: support multiple versions
+readonly LINUX_CHECKSUM=9da15ee7d08b77b770bdbeef92c86fbd65c7f3fd
+readonly BUSYBOX_CHECKSUM=68c63ab87768e9f0c16ffec79935e488ecf2fe58
+
 # General rules
 TOP=$(cd "$(dirname "$0")" ; cd .. ; pwd)
 OUT=${TOP}/build
@@ -32,6 +37,16 @@ function download()
 {
     PKG=${1^^}
     DL=$(eval "echo $`eval "echo ${PKG}_DL"`")
-    ARCHIVE=$(eval "echo $`eval "echo ${PKG}_ARCHIVE"`")
-    wget -c ${DL} -O ${OUT}/${ARCHIVE}
+    CHECKSUM=$(eval "echo $`eval "echo ${PKG}_CHECKSUM"`")
+    ARCHIVE=$(basename ${DL})
+    wget -c ${DL} -O ${OUT}/${ARCHIVE} || exit 1
+    echo "${CHECKSUM}  ${OUT}/${ARCHIVE}" | shasum -c || exit 1
+}
+
+function extract()
+{
+    PKG=${1^^}
+    DL=$(eval "echo $`eval "echo ${PKG}_DL"`")
+    ARCHIVE=$(basename ${DL})
+    tar -xf ${OUT}/${ARCHIVE} -C ${OUT} || exit 1
 }
