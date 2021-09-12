@@ -26,7 +26,7 @@ $(BIN): $(OBJS)
 	$(Q)$(CC) $(LDFLAGS) -o $@ $^
 
 $(OUT)/%.o: src/%.c
-	@mkdir -p $(OUT)
+	$(Q)mkdir -p $(OUT)
 	$(VECHO) "  CC\t$@\n"
 	$(Q)$(CC) -o $@ $(CFLAGS) -c -MMD -MF $@.d $<
 
@@ -36,14 +36,15 @@ $(OUT)/bzImage:
 $(OUT)/rootfs.cpio:
 	$(Q)scripts/build-rootfs.sh
 
-check: $(BIN) build/bzImage build/rootfs.cpio
+check: $(BIN) $(OUT)/bzImage $(OUT)/rootfs.cpio
 	$(VECHO) "\nOnce the message 'Kernel panic' appears, press ctrl-c to exit\n"
-	sudo ./$^
+	$(Q)sudo ./$^
 
 clean:
-	rm -f $(OBJS) $(deps) $(BIN)
+	$(VECHO) "Cleaning...\n"
+	$(Q)rm -f $(OBJS) $(deps) $(BIN)
 
 distclean: clean
-	rm -rf build
+	$(Q)rm -rf build
 
 -include $(deps)
