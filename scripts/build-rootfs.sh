@@ -17,9 +17,9 @@ function build_busybox()
    echo "Building Busybox..."
    cp -f ${CONF}/busybox.config $(buildpath busybox)/.config
    pushd $(buildpath busybox)
-   make oldconfig || exit 1
-   make ${PARALLEL} || exit 1
-   make install || exit 1
+   make oldconfig >/dev/null || exit 1
+   make ${PARALLEL} 2>/dev/null >/dev/null || exit 1
+   make install >/dev/null || exit 1
    popd
 }
 

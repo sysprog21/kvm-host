@@ -17,9 +17,9 @@ function build_linux()
    echo "Configuring Linux kernel..."
    cp -f ${CONF}/linux.config $(buildpath linux)/.config
    pushd $(buildpath linux)
-   make ARCH=x86 oldconfig || exit 1
+   make ARCH=x86 oldconfig >/dev/null || exit 1
    echo "Building Linux kernel image..."
-   make ARCH=x86 bzImage ${PARALLEL} || exit 1
+   make ARCH=x86 bzImage ${PARALLEL} >/dev/null || exit 1
    cp -f arch/x86/boot/bzImage ${OUT}
    popd
 }
