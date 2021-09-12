@@ -31,12 +31,10 @@ $(OUT)/%.o: src/%.c
 	$(Q)$(CC) -o $@ $(CFLAGS) -c -MMD -MF $@.d $<
 
 $(OUT)/bzImage:
-	$(VECHO) "Download and build Linux kernel. Be patient!\n"
-	$(Q)scripts/build-linux-image.sh
+	$(Q)scripts/build-linux.sh
 
 $(OUT)/rootfs.cpio:
-	$(VECHO) "Download and build busybox. Be patient!\n"
-	$(Q)scripts/build-initrd.sh
+	$(Q)scripts/build-rootfs.sh
 
 check: $(BIN) build/bzImage build/rootfs.cpio
 	$(VECHO) "\nOnce the message 'Kernel panic' appears, press ctrl-c to exit\n"
