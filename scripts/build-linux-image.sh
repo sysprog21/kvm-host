@@ -2,7 +2,7 @@
 
 source scripts/common.sh
 
-readonly LINUX_VER=5.14.1
+readonly LINUX_VER=5.14.3
 readonly LINUX_DL="https://cdn.kernel.org/pub/linux/kernel/v5.x/linux-${LINUX_VER}.tar.xz"
 readonly LINUX_ARCHIVE=linux.tar.xz
 
