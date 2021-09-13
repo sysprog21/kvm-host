@@ -36,9 +36,11 @@ $(OUT)/bzImage:
 $(OUT)/rootfs.cpio:
 	$(Q)scripts/build-rootfs.sh
 
+rootfs: $(OUT)/rootfs.cpio
+
 check: $(BIN) $(OUT)/bzImage $(OUT)/rootfs.cpio
 	$(VECHO) "\nOnce the message 'Kernel panic' appears, press ctrl-c to exit\n"
-	$(Q)sudo ./$^
+	$(Q)sudo $(BIN) -k $(OUT)/bzImage -i $(OUT)/rootfs.cpio
 
 clean:
 	$(VECHO) "Cleaning...\n"

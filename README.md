@@ -15,6 +15,11 @@ Download and build Linux kernel from scratch:
 make build/bzImage
 ```
 
+Download and build Busybox for root file system from scratch:
+```shell
+make rootfs
+```
+
 Run Linux guest with `kvm-host`:
 ```shell
 make check
@@ -23,10 +28,12 @@ make check
 ## Usage
 
 ```
-kvm-host [bzImage]
+build/kvm-host -k bzImage [-i initrd]
 ```
 
-`bzImage` is the Path to linux kernel bzImage. The bzImage file is in a specific format, containing concatenated `bootsect.o + setup.o + misc.o + piggy.o`.
+`bzImage` is the path to linux kernel bzImage. The bzImage file is in a specific format,
+containing concatenated `bootsect.o + setup.o + misc.o + piggy.o`. `initrd` is the path to
+initial RAM disk image, which is an optional argument.
 
 ## License
 
