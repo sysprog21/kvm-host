@@ -19,14 +19,14 @@ function build_busybox()
    pushd $(buildpath busybox)
    make oldconfig >/dev/null || exit 1
    make ${PARALLEL} 2>/dev/null >/dev/null || exit 1
-   make install >/dev/null || exit 1
+   make CONFIG_PREFIX=${OUT}/rootfs install >/dev/null || exit 1
    popd
 }
 
 function generate_rootfs()
 {
    echo "Generating root file system..."
-   pushd $(buildpath busybox)/_install
+   pushd ${OUT}/rootfs
    mv linuxrc init
    mkdir -p etc/init.d
    cp -f ${FILE}/rc-startup etc/init.d/rcS
