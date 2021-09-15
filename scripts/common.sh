@@ -1,10 +1,10 @@
 # Package information
-readonly LINUX_VER=5.14.3
+readonly LINUX_VER=5.14.4
 readonly BUSYBOX_VER=1.34.0
 
 # SHA Checksums (default: SHA-1)
 # TODO: support multiple versions
-readonly LINUX_CHECKSUM=9da15ee7d08b77b770bdbeef92c86fbd65c7f3fd
+readonly LINUX_CHECKSUM=72f09f2e84bb36928bcc9285cf2ef9ef851a6089
 readonly BUSYBOX_CHECKSUM=68c63ab87768e9f0c16ffec79935e488ecf2fe58
 
 # General rules
