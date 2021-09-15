@@ -36,9 +36,11 @@ function buildpath()
 function download()
 {
     PKG=${1^^}
+    VER=$(eval "echo $`eval "echo ${PKG}_VER"`")
     DL=$(eval "echo $`eval "echo ${PKG}_DL"`")
     CHECKSUM=$(eval "echo $`eval "echo ${PKG}_CHECKSUM"`")
     ARCHIVE=$(basename ${DL})
+    echo "Downloading ${1} version ${VER} ..."
     wget -c ${DL} -O ${OUT}/${ARCHIVE} || exit 1
     echo "${CHECKSUM}  ${OUT}/${ARCHIVE}" | shasum -c || exit 1
 }
@@ -48,5 +50,6 @@ function extract()
     PKG=${1^^}
     DL=$(eval "echo $`eval "echo ${PKG}_DL"`")
     ARCHIVE=$(basename ${DL})
+    echo "Extracting ${ARCHIVE} ..."
     tar -xf ${OUT}/${ARCHIVE} -C ${OUT} || exit 1
 }

@@ -6,9 +6,7 @@ readonly BUSYBOX_DL="https://busybox.net/downloads/busybox-${BUSYBOX_VER}.tar.bz
 
 function download_busybox()
 {
-    echo "Downloading Busybox version ${BUSYBOX_VER}..."
     download busybox
-    echo "Extracting..."
     extract busybox
 }
 

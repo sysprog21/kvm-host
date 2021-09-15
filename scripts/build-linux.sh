@@ -6,9 +6,7 @@ readonly LINUX_DL="https://cdn.kernel.org/pub/linux/kernel/v5.x/linux-${LINUX_VE
 
 function download_linux()
 {
-    echo "Downloading Linux kernel version ${LINUX_VER}..."
     download linux
-    echo "Extracting..."
     extract linux
 }
 
