@@ -18,7 +18,7 @@ else
     VECHO = @printf
 endif
 
-OBJS := vm.o serial.o kvm-host.o
+OBJS := vm.o serial.o main.o
 OBJS := $(addprefix $(OUT)/,$(OBJS))
 deps := $(OBJS:%.o=%.o.d)
 
