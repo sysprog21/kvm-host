@@ -1,4 +1,8 @@
 #!/bin/sh
+mkdir /proc
+mount -t proc /proc /proc
+mkdir /sys
+mount -t sysfs sysfs /sys
 mount -t devtmpfs devtmpfs /dev
 mkdir -p /dev/pts
 mount -vt devpts -o gid=4,mode=620 none /dev/pts
