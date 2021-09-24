@@ -1,5 +1,4 @@
-#ifndef SERIAL_H
-#define SERIAL_H
+#pragma once
 
 #include <linux/kvm.h>
 #include <pthread.h>
@@ -20,5 +19,3 @@ struct serial_dev {
 void serial_init(serial_dev_t *s);
 void serial_handle(serial_dev_t *s, struct kvm_run *r);
 void serial_exit(serial_dev_t *s);
-
-#endif

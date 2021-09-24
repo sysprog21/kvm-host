@@ -1,5 +1,4 @@
-#ifndef VM_H
-#define VM_H
+#pragma once
 
 #define RAM_SIZE (1 << 30)
 #define KERNEL_OPTS "console=ttyS0"
@@ -18,5 +17,3 @@ int vm_load_initrd(vm_t *v, const char *initrd_path);
 int vm_run(vm_t *v);
 int vm_irq_line(vm_t *v, int irq, int level);
 void vm_exit(vm_t *v);
-
-#endif
