@@ -12,8 +12,7 @@
 
 struct fifo {
     uint8_t data[FIFO_LEN];
-    unsigned int head;
-    unsigned int tail;
+    unsigned int head, tail;
 };
 
 #define fifo_is_empty(fifo) ((fifo)->head == (fifo)->tail)

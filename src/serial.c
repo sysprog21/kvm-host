@@ -2,6 +2,7 @@
 #include <poll.h>
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -123,7 +124,7 @@ static void serial_in(serial_dev_t *s, uint16_t offset, void *data)
             IO_WRITE8(data, priv->ier);
         break;
     case UART_IIR:
-        IO_WRITE8(data, priv->iir | 0xc0);  // 0xc0 stands for FIFO enabled
+        IO_WRITE8(data, priv->iir | 0xc0); /* 0xc0 stands for FIFO enabled */
         break;
     case UART_LCR:
         IO_WRITE8(data, priv->lcr);
@@ -157,7 +158,7 @@ static void serial_out(serial_dev_t *s, uint16_t offset, void *data)
         if (priv->lcr & UART_LCR_DLAB) {
             priv->dll = IO_READ8(data);
         } else {
-            priv->lsr |= (UART_LSR_TEMT | UART_LSR_THRE);  // flush TX
+            priv->lsr |= (UART_LSR_TEMT | UART_LSR_THRE); /* flush TX */
             putchar(((char *) data)[0]);
             fflush(stdout);
             serial_update_irq(s);
@@ -180,8 +181,8 @@ static void serial_out(serial_dev_t *s, uint16_t offset, void *data)
     case UART_MCR:
         priv->mcr = IO_READ8(data);
         break;
-    case UART_LSR:  // factory test
-    case UART_MSR:  // not used
+    case UART_LSR: /* factory test */
+    case UART_MSR: /* not used */
         break;
     case UART_SCR:
         priv->scr = IO_READ8(data);
@@ -200,19 +201,19 @@ void serial_init(serial_dev_t *s)
 
     pthread_mutex_init(&s->lock, NULL);
     s->infd = STDIN_FILENO;
-    // create a thread which accepts serial input
+    /* create a thread which accepts serial input */
     pthread_create(&s->worker_tid, NULL, (void *) serial_console, (void *) s);
 }
 
 void serial_handle(serial_dev_t *s, struct kvm_run *r)
 {
-    uint32_t count = r->io.count;
     void *data = (uint8_t *) r + r->io.data_offset;
     void (*serial_op)(serial_dev_t *, uint16_t, void *) =
         (r->io.direction == KVM_EXIT_IO_OUT) ? serial_out : serial_in;
-    for (uint16_t offset = r->io.port - COM1_PORT_BASE; count--;
-         data += r->io.size)
-        serial_op(s, offset, data);
+
+    uint32_t c = r->io.count;
+    for (uint16_t off = r->io.port - COM1_PORT_BASE; c--; data += r->io.size)
+        serial_op(s, off, data);
 }
 
 void serial_exit(serial_dev_t *s)

@@ -3,7 +3,6 @@
 
 #include <linux/kvm.h>
 #include <pthread.h>
-#include <stdint.h>
 
 #define COM1_PORT_BASE 0x03f8
 #define COM1_PORT_SIZE 8
@@ -15,7 +14,7 @@ struct serial_dev {
     void *priv;
     pthread_mutex_t lock;
     pthread_t worker_tid;
-    int infd;  // file descriptor for serial input
+    int infd; /* file descriptor for serial input */
 };
 
 void serial_init(serial_dev_t *s);

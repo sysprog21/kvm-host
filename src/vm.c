@@ -151,8 +151,7 @@ int vm_load_image(vm_t *v, const char *image_path)
     memcpy(cmdline, KERNEL_OPTS, sizeof(KERNEL_OPTS));
     memmove(kernel, (char *) data + setupsz, datasz - setupsz);
 
-    /* setup E820 memory map to report usable memory address ranges for initrd
-     */
+    /* setup E820 memory map to report usable address ranges for initrd */
     unsigned int idx = 0;
     boot->e820_table[idx++] = (struct boot_e820_entry){
         .addr = 0x0,

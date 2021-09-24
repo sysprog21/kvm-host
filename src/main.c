@@ -4,8 +4,7 @@
 #include "err.h"
 #include "vm.h"
 
-static char *kernel_file = NULL;
-static char *initrd_file = NULL;
+static char *kernel_file = NULL, *initrd_file = NULL;
 
 #define print_option(args, help_msg) printf("  %-30s%s", args, help_msg)
 
@@ -21,9 +20,11 @@ static void usage(const char *execpath)
 int main(int argc, char *argv[])
 {
     int option_index = 0;
-    struct option opts[] = {{"kernel", 1, NULL, 'k'},
-                            {"initrd", 1, NULL, 'i'},
-                            {"help", 0, NULL, 'h'}};
+    struct option opts[] = {
+        {"kernel", 1, NULL, 'k'},
+        {"initrd", 1, NULL, 'i'},
+        {"help", 0, NULL, 'h'},
+    };
 
     int c;
     while ((c = getopt_long(argc, argv, "k:i:h", opts, &option_index)) != -1) {
