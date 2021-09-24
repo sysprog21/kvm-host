@@ -2,6 +2,7 @@ CC ?= gcc
 CFLAGS = -O2
 CFLAGS += -Wall -std=gnu99
 CFLAGS += -g
+LDFLAGS = -lpthread
 
 OUT ?= build
 BIN = $(OUT)/kvm-host
@@ -17,13 +18,13 @@ else
     VECHO = @printf
 endif
 
-OBJS := vm.o kvm-host.o
+OBJS := vm.o serial.o kvm-host.o
 OBJS := $(addprefix $(OUT)/,$(OBJS))
 deps := $(OBJS:%.o=%.o.d)
 
 $(BIN): $(OBJS)
 	$(VECHO) "  LD\t$@\n"
-	$(Q)$(CC) $(LDFLAGS) -o $@ $^
+	$(Q)$(CC) $(LDFLAGS) -o $@ $^ $(LDFLAGS)
 
 $(OUT)/%.o: src/%.c
 	$(Q)mkdir -p $(OUT)

@@ -18,6 +18,7 @@
 #include <unistd.h>
 
 #include "err.h"
+#include "serial.h"
 #include "vm.h"
 
 static int vm_init_regs(vm_t *v)
@@ -113,6 +114,7 @@ int vm_init(vm_t *v)
 
     vm_init_regs(v);
     vm_init_cpu_id(v);
+    serial_init(&v->serial);
 
     return 0;
 }
@@ -213,13 +215,8 @@ int vm_run(vm_t *v)
 
         switch (run->exit_reason) {
         case KVM_EXIT_IO:
-            if (run->io.port == 0x3f8 && run->io.direction == KVM_EXIT_IO_OUT) {
-                uint32_t size = run->io.size;
-                uint64_t offset = run->io.data_offset;
-                printf("%.*s", size * run->io.count, (char *) run + offset);
-            } else if ((run->io.port == 0x3f8 + 5) &&
-                       (run->io.direction == KVM_EXIT_IO_IN))
-                *((char *) run + run->io.data_offset) = 0x20;
+            if (run->io.port >= COM1_PORT_BASE && run->io.port < COM1_PORT_END)
+                serial_handle(&v->serial, run);
             break;
         case KVM_EXIT_SHUTDOWN:
             printf("shutdown\n");
@@ -231,8 +228,22 @@ int vm_run(vm_t *v)
     }
 }
 
+int vm_irq_line(vm_t *v, int irq, int level)
+{
+    struct kvm_irq_level irq_level = {
+        {.irq = irq},
+        .level = level,
+    };
+
+    if (ioctl(v->vm_fd, KVM_IRQ_LINE, &irq_level) < 0)
+        return throw_err("Failed to set the status of an IRQ line");
+
+    return 0;
+}
+
 void vm_exit(vm_t *v)
 {
+    serial_exit(&v->serial);
     close(v->kvm_fd);
     close(v->vm_fd);
     close(v->vcpu_fd);
