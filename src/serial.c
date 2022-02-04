@@ -1,6 +1,5 @@
 #include <linux/serial_reg.h>
 #include <poll.h>
-#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -14,9 +13,6 @@
 #define SERIAL_IRQ 4
 #define IO_READ8(data) *((uint8_t *) data)
 #define IO_WRITE8(data, value) ((uint8_t *) data)[0] = value
-
-/* global state to stop the loop of thread */
-static volatile bool thread_stop = false;
 
 struct serial_dev_priv {
     uint8_t dll;
@@ -69,35 +65,27 @@ static int serial_readable(serial_dev_t *s)
     return (poll(&pollfd, 1, 0) > 0) && (pollfd.revents & POLLIN);
 }
 
-static void serial_console(serial_dev_t *s)
+void serial_console(serial_dev_t *s)
 {
     struct serial_dev_priv *priv = (struct serial_dev_priv *) s->priv;
 
-    while (!__atomic_load_n(&thread_stop, __ATOMIC_RELAXED)) {
-        pthread_mutex_lock(&s->lock);
+    if (priv->lsr & UART_LSR_DR || !fifo_is_empty(&priv->rx_buf))
+        return;
 
-        if (priv->lsr & UART_LSR_DR || !fifo_is_empty(&priv->rx_buf))
-            goto unlock;
-
-        while (!fifo_is_full(&priv->rx_buf) && serial_readable(s)) {
-            char c;
-            if (read(s->infd, &c, 1) == -1)
-                break;
-            if (!fifo_put(&priv->rx_buf, c))
-                break;
-            priv->lsr |= UART_LSR_DR;
-        }
-        serial_update_irq(s);
-    unlock:
-        pthread_mutex_unlock(&s->lock);
+    while (!fifo_is_full(&priv->rx_buf) && serial_readable(s)) {
+        char c;
+        if (read(s->infd, &c, 1) == -1)
+            break;
+        if (!fifo_put(&priv->rx_buf, c))
+            break;
+        priv->lsr |= UART_LSR_DR;
     }
+    serial_update_irq(s);
 }
 
 static void serial_in(serial_dev_t *s, uint16_t offset, void *data)
 {
     struct serial_dev_priv *priv = (struct serial_dev_priv *) s->priv;
-
-    pthread_mutex_lock(&s->lock);
 
     switch (offset) {
     case UART_RX:
@@ -144,14 +132,11 @@ static void serial_in(serial_dev_t *s, uint16_t offset, void *data)
     default:
         break;
     }
-    pthread_mutex_unlock(&s->lock);
 }
 
 static void serial_out(serial_dev_t *s, uint16_t offset, void *data)
 {
     struct serial_dev_priv *priv = (struct serial_dev_priv *) s->priv;
-
-    pthread_mutex_lock(&s->lock);
 
     switch (offset) {
     case UART_TX:
@@ -190,7 +175,6 @@ static void serial_out(serial_dev_t *s, uint16_t offset, void *data)
     default:
         break;
     }
-    pthread_mutex_unlock(&s->lock);
 }
 
 void serial_init(serial_dev_t *s)
@@ -199,10 +183,7 @@ void serial_init(serial_dev_t *s)
         .priv = (void *) &serial_dev_priv,
     };
 
-    pthread_mutex_init(&s->lock, NULL);
     s->infd = STDIN_FILENO;
-    /* create a thread which accepts serial input */
-    pthread_create(&s->worker_tid, NULL, (void *) serial_console, (void *) s);
 }
 
 void serial_handle(serial_dev_t *s, struct kvm_run *r)
@@ -214,11 +195,4 @@ void serial_handle(serial_dev_t *s, struct kvm_run *r)
     uint32_t c = r->io.count;
     for (uint16_t off = r->io.port - COM1_PORT_BASE; c--; data += r->io.size)
         serial_op(s, off, data);
-}
-
-void serial_exit(serial_dev_t *s)
-{
-    __atomic_store_n(&thread_stop, true, __ATOMIC_RELAXED);
-    pthread_join(s->worker_tid, NULL);
-    pthread_mutex_destroy(&s->lock);
 }

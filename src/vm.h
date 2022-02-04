@@ -4,8 +4,10 @@
 #define KERNEL_OPTS "console=ttyS0"
 
 #include "serial.h"
+#include <pthread.h>
 
 typedef struct {
+    pthread_t timer_tid;
     int kvm_fd, vm_fd, vcpu_fd;
     void *mem;
     serial_dev_t serial;

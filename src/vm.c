@@ -5,16 +5,20 @@
 #include <asm/bootparam.h>
 #include <asm/e820.h>
 
+#include <assert.h>
+#include <fcntl.h>
 #include <linux/kvm.h>
 #include <linux/kvm_para.h>
-
-#include <fcntl.h>
+#include <signal.h>
+#include <stdbool.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/epoll.h>
 #include <sys/ioctl.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
+#include <sys/timerfd.h>
 #include <unistd.h>
 
 #include "err.h"
@@ -72,6 +76,88 @@ static void vm_init_cpu_id(vm_t *v)
     ioctl(v->vcpu_fd, KVM_SET_CPUID2, &kvm_cpuid);
 }
 
+#define FREQ_NS ((int)(1.0e6))
+#define NS_PER_SEC ((int)(1.0e9))
+
+/* global state to stop the loop of thread */
+static volatile bool thread_stop = false;
+static pthread_t main_thread;
+
+static void *timer_thread(void *args)
+{
+    struct epoll_event events[1];
+    int epoll_fd = *(int *) args;
+
+    while (!__atomic_load_n(&thread_stop, __ATOMIC_RELAXED)) {
+        int nfds = epoll_wait(epoll_fd, events, 1, -1);
+        if (nfds < 0)
+            continue;
+
+        assert(nfds == 1);
+
+        uint64_t exp;
+        ssize_t size = read(events[0].data.fd, &exp, sizeof(uint64_t));
+        if (size != sizeof(uint64_t))
+            return NULL;
+
+        pthread_kill((pthread_t) main_thread, SIGUSR1);
+    }
+
+    return NULL;
+}
+
+static void handler(int sig, siginfo_t *si, void *uc) {}
+
+static int vm_init_timer(vm_t *v)
+{
+    int epoll_fd, timer_fd;
+    struct epoll_event ev;
+    struct itimerspec its;
+    struct sigaction sa;
+    sigset_t mask;
+
+    sa.sa_flags = SA_SIGINFO;
+    sa.sa_sigaction = handler;
+    sigemptyset(&sa.sa_mask);
+    if (sigaction(SIGUSR1, &sa, NULL) == -1)
+        return throw_err("Failed to create signal handler");
+
+    /* Block timer signal temporarily. */
+    sigemptyset(&mask);
+    sigaddset(&mask, SIGUSR1);
+    if (sigprocmask(SIG_SETMASK, &mask, NULL) == -1)
+        return throw_err("Failed to block timer signal");
+
+    epoll_fd = epoll_create1(0);
+    if (epoll_fd == -1)
+        return throw_err("Failed to created epoll fd");
+
+    timer_fd = timerfd_create(CLOCK_MONOTONIC, TFD_CLOEXEC | TFD_NONBLOCK);
+    if (timer_fd == -1)
+        return throw_err("Failed to create timer");
+
+    ev.events = EPOLLIN, ev.data.fd = timer_fd;
+    if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, timer_fd, &ev) == -1)
+        return throw_err("Failed to add event for timer");
+
+    its.it_value.tv_sec = FREQ_NS / NS_PER_SEC;
+    its.it_value.tv_nsec = FREQ_NS % NS_PER_SEC;
+    its.it_interval.tv_sec = its.it_value.tv_sec;
+    its.it_interval.tv_nsec = its.it_value.tv_nsec;
+    if (timerfd_settime(timer_fd, 0, &its, NULL) < 0)
+        return throw_err("Failed to set timer");
+
+    main_thread = pthread_self();
+    pthread_create(&v->timer_tid, NULL, &timer_thread, (void *) &epoll_fd);
+
+    /* Unlock the timer signal, so that timer notification
+     * can be delivered. */
+    if (sigprocmask(SIG_UNBLOCK, &mask, NULL) == -1)
+        return throw_err("Failed to unblock timer signal");
+
+    return 0;
+}
+
 int vm_init(vm_t *v)
 {
     if ((v->kvm_fd = open("/dev/kvm", O_RDWR)) < 0)
@@ -116,6 +202,8 @@ int vm_init(vm_t *v)
     vm_init_cpu_id(v);
     serial_init(&v->serial);
 
+    if (vm_init_timer(v))
+        return throw_err("Failed to init timer for kvm-host");
     return 0;
 }
 
@@ -210,15 +298,18 @@ int vm_run(vm_t *v)
         mmap(0, run_size, PROT_READ | PROT_WRITE, MAP_SHARED, v->vcpu_fd, 0);
 
     while (1) {
-        if (ioctl(v->vcpu_fd, KVM_RUN, 0) < 0) {
+        int err = ioctl(v->vcpu_fd, KVM_RUN, 0);
+        if (err < 0 && (errno != EINTR && errno != EAGAIN))
             munmap(run, run_size);
             return throw_err("Failed to execute kvm_run");
         }
-            
         switch (run->exit_reason) {
         case KVM_EXIT_IO:
             if (run->io.port >= COM1_PORT_BASE && run->io.port < COM1_PORT_END)
                 serial_handle(&v->serial, run);
+            break;
+        case KVM_EXIT_INTR:
+            serial_console(&v->serial);
             break;
         case KVM_EXIT_SHUTDOWN:
             printf("shutdown\n");
@@ -247,7 +338,8 @@ int vm_irq_line(vm_t *v, int irq, int level)
 
 void vm_exit(vm_t *v)
 {
-    serial_exit(&v->serial);
+    __atomic_store_n(&thread_stop, true, __ATOMIC_RELAXED);
+    pthread_join(v->timer_tid, NULL);
     close(v->kvm_fd);
     close(v->vm_fd);
     close(v->vcpu_fd);

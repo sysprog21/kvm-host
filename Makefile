@@ -2,7 +2,7 @@ CC ?= gcc
 CFLAGS = -O2
 CFLAGS += -Wall -std=gnu99
 CFLAGS += -g
-LDFLAGS = -lpthread
+LDFLAGS = -lpthread -lrt
 
 OUT ?= build
 BIN = $(OUT)/kvm-host
