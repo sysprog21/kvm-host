@@ -164,7 +164,7 @@ int vm_load_image(vm_t *v, const char *image_path)
         .type = E820_RAM,
     };
     boot->e820_entries = idx;
-
+    munmap(data, datasz);
     return 0;
 }
 
@@ -199,6 +199,7 @@ int vm_load_initrd(vm_t *v, const char *initrd_path)
 
     boot->hdr.ramdisk_image = addr;
     boot->hdr.ramdisk_size = datasz;
+    munmap(data, datasz);
     return 0;
 }
 
@@ -210,6 +211,7 @@ int vm_run(vm_t *v)
 
     while (1) {
         if (ioctl(v->vcpu_fd, KVM_RUN, 0) < 0)
+            munmap(run, run_size);
             return throw_err("Failed to execute kvm_run");
 
         switch (run->exit_reason) {
@@ -219,9 +221,11 @@ int vm_run(vm_t *v)
             break;
         case KVM_EXIT_SHUTDOWN:
             printf("shutdown\n");
+            munmap(run, run_size);
             return 0;
         default:
             printf("reason: %d\n", run->exit_reason);
+            munmap(run, run_size);
             return -1;
         }
     }
