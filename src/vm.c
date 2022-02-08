@@ -210,10 +210,11 @@ int vm_run(vm_t *v)
         mmap(0, run_size, PROT_READ | PROT_WRITE, MAP_SHARED, v->vcpu_fd, 0);
 
     while (1) {
-        if (ioctl(v->vcpu_fd, KVM_RUN, 0) < 0)
+        if (ioctl(v->vcpu_fd, KVM_RUN, 0) < 0) {
             munmap(run, run_size);
             return throw_err("Failed to execute kvm_run");
-
+        }
+            
         switch (run->exit_reason) {
         case KVM_EXIT_IO:
             if (run->io.port >= COM1_PORT_BASE && run->io.port < COM1_PORT_END)
