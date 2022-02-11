@@ -1,11 +1,11 @@
 # Package information
 readonly LINUX_VER=5.16.5
-readonly BUSYBOX_VER=1.34.0
+readonly BUSYBOX_VER=1.35.0
 
 # SHA Checksums (default: SHA-1)
 # TODO: support multiple versions
 readonly LINUX_CHECKSUM=9f686382c52f03a0c9cfcb06aa2651895f45a6b6
-readonly BUSYBOX_CHECKSUM=68c63ab87768e9f0c16ffec79935e488ecf2fe58
+readonly BUSYBOX_CHECKSUM=36a1766206c8148bc06aca4e1f134016d40912d0
 
 # General rules
 TOP=$(cd "$(dirname "$0")" ; cd .. ; pwd)
