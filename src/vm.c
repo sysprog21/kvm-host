@@ -187,7 +187,7 @@ int vm_load_initrd(vm_t *v, const char *initrd_path)
     for (;;) {
         if (addr < 0x100000)
             return throw_err("Not enough memory for initrd");
-        else if (addr < (RAM_SIZE - datasz))
+        if (addr < (RAM_SIZE - datasz))
             break;
         addr -= 0x100000;
     }
