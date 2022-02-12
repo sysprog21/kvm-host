@@ -200,11 +200,9 @@ static void handler(int sig, siginfo_t *si, void *uc) {}
 
 int serial_init(serial_dev_t *s)
 {
-    struct sigaction sa;
     sigset_t mask;
 
-    sa.sa_flags = SA_SIGINFO;
-    sa.sa_sigaction = handler;
+    struct sigaction sa = {.sa_flags = SA_SIGINFO, .sa_sigaction = handler};
     sigemptyset(&sa.sa_mask);
     if (sigaction(SIGUSR1, &sa, NULL) == -1)
         return throw_err("Failed to create signal handler");
@@ -223,7 +221,8 @@ int serial_init(serial_dev_t *s)
     pthread_create(&s->worker_tid, NULL, (void *) serial_thread, (void *) s);
 
     /* Unlock the timer signal, so that timer notification
-     * can be delivered. */
+     * can be delivered.
+     */
     if (sigprocmask(SIG_UNBLOCK, &mask, NULL) == -1)
         return throw_err("Failed to unblock timer signal");
 
