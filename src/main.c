@@ -1,5 +1,7 @@
 #include <getopt.h>
 #include <stdlib.h>
+#include <termios.h>
+#include <unistd.h>
 
 #include "err.h"
 #include "vm.h"
@@ -15,6 +17,31 @@ static void usage(const char *execpath)
 
     print_option("-h, --help", "Print help of CLI and exit.\n");
     print_option("-i, --initrd initrd", "Initial RAM disk image\n");
+}
+
+static struct termios saved_attributes;
+
+static void reset_input_mode(void)
+{
+    tcsetattr(STDIN_FILENO, TCSANOW, &saved_attributes);
+}
+
+static void set_input_mode(void)
+{
+    struct termios tattr;
+    /* Make sure stdin is a terminal. */
+    if (!isatty(STDIN_FILENO)) {
+        fprintf(stderr, "Not a terminal.\n");
+        exit(EXIT_FAILURE);
+    }
+
+    /* Save the terminal attributes so we can restore them later. */
+    tcgetattr(STDIN_FILENO, &saved_attributes);
+    atexit(reset_input_mode);
+
+    tattr = saved_attributes;
+    tattr.c_lflag &= ~(ICANON | ECHO);
+    tcsetattr(STDIN_FILENO, TCSANOW, &tattr);
 }
 
 int main(int argc, char *argv[])
@@ -43,6 +70,8 @@ int main(int argc, char *argv[])
         }
     }
 
+    set_input_mode();
+
     vm_t vm;
     if (vm_init(&vm) < 0)
         return throw_err("Failed to initialize guest vm");
@@ -58,5 +87,8 @@ int main(int argc, char *argv[])
 
     vm_run(&vm);
     vm_exit(&vm);
+
+    reset_input_mode();
+
     return 0;
 }
