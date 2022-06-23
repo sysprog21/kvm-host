@@ -119,6 +119,8 @@ int vm_init(vm_t *v)
         return throw_err("Failed to init UART device");
     bus_init(&v->io_bus);
     bus_init(&v->mmio_bus);
+    pci_init(&v->pci, &v->io_bus);
+    virtio_blk_init(&v->virtio_blk_dev);
     return 0;
 }
 
@@ -206,6 +208,15 @@ int vm_load_initrd(vm_t *v, const char *initrd_path)
     return 0;
 }
 
+int vm_load_diskimg(vm_t *v, const char *diskimg_file)
+{
+    if (diskimg_init(&v->diskimg, diskimg_file) < 0)
+        return -1;
+    virtio_blk_init_pci(&v->virtio_blk_dev, &v->diskimg, &v->pci, &v->io_bus,
+                        &v->mmio_bus);
+    return 0;
+}
+
 void vm_handle_io(vm_t *v, struct kvm_run *run)
 {
     uint64_t addr = run->io.port;
@@ -275,9 +286,44 @@ int vm_irq_line(vm_t *v, int irq, int level)
     return 0;
 }
 
+void *vm_guest_to_host(vm_t *v, void *guest)
+{
+    return (uintptr_t) v->mem + guest;
+}
+
+void vm_irqfd_register(vm_t *v, int fd, int gsi, int flags)
+{
+    struct kvm_irqfd irqfd = {
+        .fd = fd,
+        .gsi = gsi,
+        .flags = flags,
+    };
+
+    if (ioctl(v->vm_fd, KVM_IRQFD, &irqfd) < 0)
+        throw_err("Failed to set the status of IRQFD");
+}
+
+void vm_ioeventfd_register(vm_t *v,
+                           int fd,
+                           unsigned long long addr,
+                           int len,
+                           int flags)
+{
+    struct kvm_ioeventfd ioeventfd = {
+        .fd = fd,
+        .addr = addr,
+        .len = len,
+        .flags = flags,
+    };
+
+    if (ioctl(v->vm_fd, KVM_IOEVENTFD, &ioeventfd) < 0)
+        throw_err("Failed to set the status of IOEVENTFD");
+}
+
 void vm_exit(vm_t *v)
 {
     serial_exit(&v->serial);
+    virtio_blk_exit(&v->virtio_blk_dev);
     close(v->kvm_fd);
     close(v->vm_fd);
     close(v->vcpu_fd);

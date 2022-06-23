@@ -28,12 +28,13 @@ make check
 ## Usage
 
 ```
-build/kvm-host -k bzImage [-i initrd]
+build/kvm-host -k bzImage [-i initrd] [-d disk-image]
 ```
 
 `bzImage` is the path to linux kernel bzImage. The bzImage file is in a specific format,
 containing concatenated `bootsect.o + setup.o + misc.o + piggy.o`. `initrd` is the path to
 initial RAM disk image, which is an optional argument.
+`disk-image` is the path to disk image which can be mounted as a block device via virtio. For the reference Linux guest, ext4 filesystem is used for disk image.
 
 ## License
 
