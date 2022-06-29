@@ -76,7 +76,9 @@ static void pci_address_io(void *owner,
 {
     struct pci *pci = (struct pci *) owner;
     void *p = (void *) &pci->pci_addr + offset;
-    /* The data in port 0xCF8 is as an address when Guest Linux accesses the configuration space */
+    /* The data in port 0xCF8 is as an address when Guest Linux accesses the
+     * configuration space.
+     */
     if (is_write)
         memcpy(p, data, size);
     else
@@ -103,6 +105,10 @@ static inline void pci_deactivate_bar(struct pci_dev *dev,
         bus_deregister_dev(bus, &dev->space_dev[bar]);
     dev->bar_active[bar] = false;
 }
+
+#ifndef PCI_STD_NUM_BARS
+#define PCI_STD_NUM_BARS 6 /* Number of standard BARs */
+#endif
 
 static void pci_command_bar(struct pci_dev *dev)
 {
