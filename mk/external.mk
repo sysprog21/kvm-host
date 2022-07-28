@@ -63,4 +63,4 @@ $(ROOTFS_IMG): $(BUSYBOX_BIN)
 	  mkdir -p etc/init.d ; \
 	  cp -f $(FILE)/rc-startup etc/init.d/rcS ; \
 	  chmod 755 etc/init.d/rcS ; \
-	  find . | cpio -o --format=newc > $(TOP)/$(OUT)/rootfs.cpio 2>/dev/null) && $(call notice, [OK])
+	  find . | cpio -o --format=newc > $(abspath $@) 2>/dev/null) && $(call notice, [OK])
