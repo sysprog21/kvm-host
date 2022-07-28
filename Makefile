@@ -35,9 +35,13 @@ $(OUT)/%.o: src/%.c
 # Rules for downloading and building the minimal Linux system
 include mk/external.mk
 
-check: $(BIN) $(LINUX_IMG) $(ROOTFS_IMG)
+$(OUT)/ext4.img:
+	$(Q)dd if=/dev/zero of=$@ bs=4k count=600
+	$(Q)mkfs.ext4 -F $@
+
+check: $(BIN) $(LINUX_IMG) $(ROOTFS_IMG) $(OUT)/ext4.img
 	$(VECHO) "\nOnce the message 'Kernel panic' appears, press Ctrl-C to exit\n\n"
-	$(Q)sudo $(BIN) -k $(LINUX_IMG) -i $(ROOTFS_IMG)
+	$(Q)sudo $(BIN) -k $(LINUX_IMG) -i $(ROOTFS_IMG) -d $(OUT)/ext4.img
 
 clean:
 	$(VECHO) "Cleaning...\n"

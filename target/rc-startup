@@ -6,3 +6,8 @@ mount -t sysfs sysfs /sys
 mount -t devtmpfs devtmpfs /dev
 mkdir -p /dev/pts
 mount -vt devpts -o gid=4,mode=620 none /dev/pts
+
+# virtio-blk
+mkdir /mnt
+echo "vda 0:0 660 @mount \$MDEV /mnt" > /etc/mdev.conf
+mdev -s
