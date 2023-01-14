@@ -14,10 +14,10 @@ LINUX_SRC = $(OUT)/linux-${LINUX_VER}
 LINUX_SRC_SHA1 = 8a8093249995b5c70fed25587a774b8f2e83d783
 
 # BusyBox
-BUSYBOX_VER=1.35.0
+BUSYBOX_VER=1.36.0
 BUSYBOX_SRC_URL = https://busybox.net/downloads/busybox-${BUSYBOX_VER}.tar.bz2
 BUSYBOX_SRC = $(OUT)/busybox-${BUSYBOX_VER}
-BUSYBOX_SRC_SHA1 = 36a1766206c8148bc06aca4e1f134016d40912d0
+BUSYBOX_SRC_SHA1 = 10cf8331d6b5682a02e9e276870d13db212a02bb
 
 define download-n-extract
 $(eval $(T)_SRC_ARCHIVE = $(OUT)/$(shell basename $($(T)_SRC_URL)))
