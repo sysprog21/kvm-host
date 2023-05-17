@@ -115,11 +115,11 @@ int vm_init(vm_t *v)
 
     vm_init_regs(v);
     vm_init_cpu_id(v);
-    if (serial_init(&v->serial))
-        return throw_err("Failed to init UART device");
     bus_init(&v->io_bus);
     bus_init(&v->mmio_bus);
     pci_init(&v->pci, &v->io_bus);
+    if (serial_init(&v->serial, &v->io_bus))
+        return throw_err("Failed to init UART device");
     virtio_blk_init(&v->virtio_blk_dev);
     return 0;
 }
@@ -223,13 +223,9 @@ void vm_handle_io(vm_t *v, struct kvm_run *run)
     void *data = (void *) run + run->io.data_offset;
     bool is_write = run->io.direction == KVM_EXIT_IO_OUT;
 
-    if (run->io.port >= COM1_PORT_BASE && run->io.port < COM1_PORT_END) {
-        serial_handle(&v->serial, run);
-    } else {
-        for (int i = 0; i < run->io.count; i++) {
-            bus_handle_io(&v->io_bus, data, is_write, addr, run->io.size);
-            addr += run->io.size;
-        }
+    for (int i = 0; i < run->io.count; i++) {
+        bus_handle_io(&v->io_bus, data, is_write, addr, run->io.size);
+        addr += run->io.size;
     }
 }
 

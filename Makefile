@@ -14,6 +14,7 @@ all: $(BIN)
 OBJS := \
 	vm.o \
 	serial.o \
+	bus.o \
 	pci.o \
 	virtio-pci.o \
 	virtq.o \
