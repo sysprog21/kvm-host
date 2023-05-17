@@ -1,10 +1,10 @@
 #pragma once
 
-#include "bus.h"
 #include <linux/kvm.h>
 #include <linux/pci_regs.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include "bus.h"
 
 union pci_config_address {
     struct {

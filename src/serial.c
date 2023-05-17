@@ -196,9 +196,23 @@ static void serial_out(serial_dev_t *s, uint16_t offset, void *data)
     }
 }
 
+
+static void serial_handle_io(void *owner,
+                             void *data,
+                             uint8_t is_write,
+                             uint64_t offset,
+                             uint8_t size)
+{
+    serial_dev_t *s = (serial_dev_t *) owner;
+    void (*serial_op)(serial_dev_t *, uint16_t, void *) =
+        is_write ? serial_out : serial_in;
+
+    serial_op(s, offset, data);
+}
+
 static void handler(int sig, siginfo_t *si, void *uc) {}
 
-int serial_init(serial_dev_t *s)
+int serial_init(serial_dev_t *s, struct bus *bus)
 {
     sigset_t mask;
 
@@ -226,18 +240,10 @@ int serial_init(serial_dev_t *s)
     if (sigprocmask(SIG_UNBLOCK, &mask, NULL) == -1)
         return throw_err("Failed to unblock timer signal");
 
+    dev_init(&s->dev, COM1_PORT_BASE, COM1_PORT_SIZE, s, serial_handle_io);
+    bus_register_dev(bus, &s->dev);
+
     return 0;
-}
-
-void serial_handle(serial_dev_t *s, struct kvm_run *r)
-{
-    void *data = (uint8_t *) r + r->io.data_offset;
-    void (*serial_op)(serial_dev_t *, uint16_t, void *) =
-        (r->io.direction == KVM_EXIT_IO_OUT) ? serial_out : serial_in;
-
-    uint32_t c = r->io.count;
-    for (uint16_t off = r->io.port - COM1_PORT_BASE; c--; data += r->io.size)
-        serial_op(s, off, data);
 }
 
 void serial_exit(serial_dev_t *s)
