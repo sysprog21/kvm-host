@@ -11,8 +11,6 @@ typedef struct serial_dev serial_dev_t;
 
 struct serial_dev {
     void *priv;
-    pthread_t main_tid, worker_tid;
-    int infd; /* file descriptor for serial input */
     struct dev dev;
 };
 

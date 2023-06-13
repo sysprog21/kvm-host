@@ -255,7 +255,6 @@ int vm_run(vm_t *v)
             vm_handle_mmio(v, run);
             break;
         case KVM_EXIT_INTR:
-            serial_console(&v->serial);
             break;
         case KVM_EXIT_SHUTDOWN:
             printf("shutdown\n");

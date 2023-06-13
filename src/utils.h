@@ -1,5 +1,4 @@
-#ifndef UTILS_H
-#define UTILS_H
+#pragma once
 
 #define container_of(ptr, type, member)               \
     ({                                                \
@@ -12,12 +11,19 @@
 
 struct fifo {
     uint8_t data[FIFO_LEN];
-    unsigned int head, tail;
+    _Atomic unsigned int head, tail;
 };
 
 #define fifo_is_empty(fifo) ((fifo)->head == (fifo)->tail)
 
 #define fifo_is_full(fifo) ((fifo)->tail - (fifo)->head > FIFO_MASK)
+
+#define fifo_level(fifo) ((fifo)->tail - (fifo)->head)
+
+#define fifo_clear(fifo)             \
+    do {                             \
+        (fifo)->head = (fifo)->tail; \
+    } while (0)
 
 #define fifo_put(fifo, value)                               \
     ({                                                      \
@@ -38,5 +44,3 @@ struct fifo {
         }                                                   \
         __ret;                                              \
     })
-
-#endif
