@@ -1,8 +1,8 @@
-# Contributing to `rv32emu`
+# Contributing to `kvm-host`
 
 :+1::tada: First off, thanks for taking the time to contribute! :tada::+1:
 
-The following is a set of guidelines for contributing to [rv32emu](https://github.com/sysprog21/rv32emu)
+The following is a set of guidelines for contributing to [kvm-host](https://github.com/sysprog21/kvm-host)
 hosted on GitHub. These are mostly guidelines, not rules. Use your best
 judgment, and feel free to propose changes to this document in a pull request.
 
@@ -10,7 +10,7 @@ judgment, and feel free to propose changes to this document in a pull request.
 
 This project uses GitHub Issues to track ongoing development, discuss project plans, and keep track of bugs. Be sure to search for existing issues before you create another one.
 
-Visit our [Issues page on GitHub](https://github.com/sysprog21/rv32emu/issues) to search and submit.
+Visit our [Issues page on GitHub](https://github.com/sysprog21/kvm-host/issues) to search and submit.
 
 ## Coding Convention
 
