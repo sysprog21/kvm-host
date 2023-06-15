@@ -73,6 +73,31 @@ static void vm_init_cpu_id(vm_t *v)
     ioctl(v->vcpu_fd, KVM_SET_CPUID2, &kvm_cpuid);
 }
 
+#define MSR_IA32_MISC_ENABLE 0x000001a0
+#define MSR_IA32_MISC_ENABLE_FAST_STRING_BIT 0
+#define MSR_IA32_MISC_ENABLE_FAST_STRING \
+    (1ULL << MSR_IA32_MISC_ENABLE_FAST_STRING_BIT)
+
+#define KVM_MSR_ENTRY(_index, _data)   \
+    (struct kvm_msr_entry)             \
+    {                                  \
+        .index = _index, .data = _data \
+    }
+static void vm_init_msrs(vm_t *v)
+{
+    int ndx = 0;
+    struct kvm_msrs *msrs =
+        calloc(1, sizeof(struct kvm_msrs) + (sizeof(struct kvm_msr_entry) * 1));
+
+    msrs->entries[ndx++] =
+        KVM_MSR_ENTRY(MSR_IA32_MISC_ENABLE, MSR_IA32_MISC_ENABLE_FAST_STRING);
+    msrs->nmsrs = ndx;
+
+    ioctl(v->vcpu_fd, KVM_SET_MSRS, msrs);
+
+    free(msrs);
+}
+
 int vm_init(vm_t *v)
 {
     if ((v->kvm_fd = open("/dev/kvm", O_RDWR)) < 0)
@@ -115,6 +140,8 @@ int vm_init(vm_t *v)
 
     vm_init_regs(v);
     vm_init_cpu_id(v);
+    vm_init_msrs(v);
+
     bus_init(&v->io_bus);
     bus_init(&v->mmio_bus);
     pci_init(&v->pci, &v->io_bus);
