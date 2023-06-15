@@ -1,8 +1,12 @@
 include mk/common.mk
 
+ARCH ?= $(shell uname -m)
+PWD ?= $(shell pwd)
+
 CC ?= gcc
 CFLAGS = -O2
 CFLAGS += -Wall -std=gnu99
+CFLAGS += -I$(PWD)/src
 CFLAGS += -g
 LDFLAGS = -lpthread
 
@@ -21,6 +25,13 @@ OBJS := \
 	virtio-blk.o \
 	diskimg.o \
 	main.o
+
+ifeq ($(ARCH), x86_64)
+	CFLAGS += -I$(PWD)/src/arch/x86
+	CFLAGS += -include src/arch/x86/desc.h
+	OBJS += arch/x86/vm.o
+endif
+
 OBJS := $(addprefix $(OUT)/,$(OBJS))
 deps := $(OBJS:%.o=%.o.d)
 
@@ -29,7 +40,7 @@ $(BIN): $(OBJS)
 	$(Q)$(CC) $(LDFLAGS) -o $@ $^ $(LDFLAGS)
 
 $(OUT)/%.o: src/%.c
-	$(Q)mkdir -p $(OUT)
+	$(Q)mkdir -p $(shell dirname $@)
 	$(VECHO) "  CC\t$@\n"
 	$(Q)$(CC) -o $@ $(CFLAGS) -c -MMD -MF $@.d $<
 
