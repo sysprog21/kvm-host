@@ -55,4 +55,4 @@ void pci_dev_init(struct pci_dev *dev,
                   struct pci *pci,
                   struct bus *io_bus,
                   struct bus *mmio_bus);
-void pci_init();
+void pci_init(struct pci *pci);

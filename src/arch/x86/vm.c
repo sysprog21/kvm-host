@@ -117,7 +117,9 @@ int vm_arch_cpu_init(vm_t *v)
 
 int vm_arch_init_platform_device(vm_t *v)
 {
-    pci_init(&v->pci, &v->io_bus);
+    pci_init(&v->pci);
+    bus_register_dev(&v->io_bus, &v->pci.pci_addr_dev);
+    bus_register_dev(&v->io_bus, &v->pci.pci_bus_dev);
     if (serial_init(&v->serial, &v->io_bus))
         return throw_err("Failed to init UART device");
     virtio_blk_init(&v->virtio_blk_dev);
