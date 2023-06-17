@@ -173,13 +173,11 @@ void pci_dev_register(struct pci_dev *dev)
 #define PCI_CONFIG_ADDR 0xCF8
 #define PCI_CONFIG_DATA 0xCFC
 
-void pci_init(struct pci *pci, struct bus *io_bus)
+void pci_init(struct pci *pci)
 {
     dev_init(&pci->pci_addr_dev, PCI_CONFIG_ADDR, sizeof(uint32_t), pci,
              pci_address_io);
     dev_init(&pci->pci_bus_dev, PCI_CONFIG_DATA, sizeof(uint32_t), pci,
              pci_data_io);
     bus_init(&pci->pci_bus);
-    bus_register_dev(io_bus, &pci->pci_addr_dev);
-    bus_register_dev(io_bus, &pci->pci_bus_dev);
 }

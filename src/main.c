@@ -94,6 +94,9 @@ int main(int argc, char *argv[])
     if (diskimg_file && vm_load_diskimg(&vm, diskimg_file) < 0)
         return throw_err("Failed to load disk image");
 
+    if (vm_late_init(&vm) < 0)
+        return -1;
+
     vm_run(&vm);
     vm_exit(&vm);
 
