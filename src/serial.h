@@ -14,6 +14,7 @@ struct serial_dev {
     pthread_t main_tid, worker_tid;
     int infd; /* file descriptor for serial input */
     struct dev dev;
+    int irq_num;
 };
 
 void serial_console(serial_dev_t *s);
