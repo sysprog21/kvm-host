@@ -55,7 +55,7 @@ static void serial_update_irq(serial_dev_t *s)
     priv->iir = iir | 0xc0;
 
     /* FIXME: the return error of vm_irq_line should be handled */
-    vm_irq_line(container_of(s, vm_t, serial), SERIAL_IRQ,
+    vm_irq_line(container_of(s, vm_t, serial), s->irq_num,
                 iir == UART_IIR_NO_INT ? 0 /* inactive */ : 1 /* active */);
 }
 
@@ -231,6 +231,7 @@ int serial_init(serial_dev_t *s, struct bus *bus)
         .priv = (void *) &serial_dev_priv,
         .main_tid = pthread_self(),
         .infd = STDIN_FILENO,
+        .irq_num = SERIAL_IRQ,
     };
     pthread_create(&s->worker_tid, NULL, (void *) serial_thread, (void *) s);
 
