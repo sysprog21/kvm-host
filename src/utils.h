@@ -19,6 +19,8 @@ struct fifo {
 
 #define fifo_is_full(fifo) ((fifo)->tail - (fifo)->head > FIFO_MASK)
 
+#define fifo_capacity(fifo) ((fifo)->tail - (fifo)->head)
+
 #define fifo_put(fifo, value)                               \
     ({                                                      \
         unsigned int __ret = !fifo_is_full(fifo);           \

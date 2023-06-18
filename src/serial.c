@@ -30,6 +30,8 @@ struct serial_dev_priv {
     uint8_t scr;
 
     struct fifo rx_buf;
+    pthread_mutex_t lock;
+    pthread_cond_t cond;
 };
 
 static struct serial_dev_priv serial_dev_priv = {
@@ -37,6 +39,8 @@ static struct serial_dev_priv serial_dev_priv = {
     .mcr = UART_MCR_OUT2,
     .lsr = UART_LSR_TEMT | UART_LSR_THRE,
     .msr = UART_MSR_DCD | UART_MSR_DSR | UART_MSR_CTS,
+    .lock = PTHREAD_MUTEX_INITIALIZER,
+    .cond = PTHREAD_COND_INITIALIZER,
 };
 
 /* FIXME: This implementation is incomplete */
@@ -52,7 +56,7 @@ static void serial_update_irq(serial_dev_t *s)
     else if ((priv->ier & UART_IER_THRI) && (priv->lsr & UART_LSR_TEMT))
         iir = UART_IIR_THRI;
 
-    priv->iir = iir | 0xc0;
+    __atomic_store_n(&priv->iir, iir | 0xc0, __ATOMIC_RELEASE);
 
     /* FIXME: the return error of vm_irq_line should be handled */
     vm_irq_line(container_of(s, vm_t, serial), s->irq_num,
@@ -76,9 +80,19 @@ static volatile bool thread_stop = false;
 
 static void *serial_thread(serial_dev_t *s)
 {
+    struct serial_dev_priv *priv = (struct serial_dev_priv *) s->priv;
     while (!__atomic_load_n(&thread_stop, __ATOMIC_RELAXED)) {
-        if (serial_readable(s, -1))
-            pthread_kill((pthread_t) s->main_tid, SIGUSR1);
+        if (!serial_readable(s, -1))
+            continue;
+        pthread_mutex_lock(&priv->lock);
+        if (fifo_is_full(&priv->rx_buf)) {
+            /* stdin is readable, but the rx_buf is full.
+             * Wait for notification.
+             */
+            pthread_cond_wait(&priv->cond, &priv->lock);
+        }
+        serial_console(s);
+        pthread_mutex_unlock(&priv->lock);
     }
 
     return NULL;
@@ -88,16 +102,13 @@ void serial_console(serial_dev_t *s)
 {
     struct serial_dev_priv *priv = (struct serial_dev_priv *) s->priv;
 
-    if (priv->lsr & UART_LSR_DR || !fifo_is_empty(&priv->rx_buf))
-        return;
-
     while (!fifo_is_full(&priv->rx_buf) && serial_readable(s, 0)) {
         char c;
         if (read(s->infd, &c, 1) == -1)
             break;
         if (!fifo_put(&priv->rx_buf, c))
             break;
-        priv->lsr |= UART_LSR_DR;
+        __atomic_store_n(&priv->lsr, priv->lsr | UART_LSR_DR, __ATOMIC_RELEASE);
     }
     serial_update_irq(s);
 }
@@ -105,16 +116,14 @@ void serial_console(serial_dev_t *s)
 static void serial_in(serial_dev_t *s, uint16_t offset, void *data)
 {
     struct serial_dev_priv *priv = (struct serial_dev_priv *) s->priv;
+    uint8_t value;
 
     switch (offset) {
     case UART_RX:
         if (priv->lcr & UART_LCR_DLAB) {
             IO_WRITE8(data, priv->dll);
         } else {
-            if (fifo_is_empty(&priv->rx_buf))
-                break;
-
-            uint8_t value;
+            pthread_mutex_lock(&priv->lock);
             if (fifo_get(&priv->rx_buf, value))
                 IO_WRITE8(data, value);
 
@@ -122,6 +131,15 @@ static void serial_in(serial_dev_t *s, uint16_t offset, void *data)
                 priv->lsr &= ~UART_LSR_DR;
                 serial_update_irq(s);
             }
+            /* The worker thread waits on the condition variable when rx_buf is
+             * full and stdin is still readable. Notify the worker thread when
+             * the capacity of the buffer drops to its half size, so the worker
+             * thread can read up to half of the buffer size before it is
+             * blocked again.
+             */
+            if (fifo_capacity(&priv->rx_buf) == FIFO_LEN / 2)
+                pthread_cond_signal(&priv->cond);
+            pthread_mutex_unlock(&priv->lock);
         }
         break;
     case UART_IER:
@@ -131,7 +149,8 @@ static void serial_in(serial_dev_t *s, uint16_t offset, void *data)
             IO_WRITE8(data, priv->ier);
         break;
     case UART_IIR:
-        IO_WRITE8(data, priv->iir | 0xc0); /* 0xc0 stands for FIFO enabled */
+        value = __atomic_load_n(&priv->iir, __ATOMIC_ACQUIRE);
+        IO_WRITE8(data, value | 0xc0); /* 0xc0 stands for FIFO enabled */
         break;
     case UART_LCR:
         IO_WRITE8(data, priv->lcr);
@@ -140,6 +159,7 @@ static void serial_in(serial_dev_t *s, uint16_t offset, void *data)
         IO_WRITE8(data, priv->mcr);
         break;
     case UART_LSR:
+        value = __atomic_load_n(&priv->lsr, __ATOMIC_ACQUIRE);
         IO_WRITE8(data, priv->lsr);
         break;
     case UART_MSR:
@@ -162,16 +182,20 @@ static void serial_out(serial_dev_t *s, uint16_t offset, void *data)
         if (priv->lcr & UART_LCR_DLAB) {
             priv->dll = IO_READ8(data);
         } else {
-            priv->lsr |= (UART_LSR_TEMT | UART_LSR_THRE); /* flush TX */
             putchar(((char *) data)[0]);
             fflush(stdout);
+            pthread_mutex_lock(&priv->lock);
+            priv->lsr |= (UART_LSR_TEMT | UART_LSR_THRE); /* flush TX */
             serial_update_irq(s);
+            pthread_mutex_unlock(&priv->lock);
         }
         break;
     case UART_IER:
         if (!(priv->lcr & UART_LCR_DLAB)) {
+            pthread_mutex_lock(&priv->lock);
             priv->ier = IO_READ8(data);
             serial_update_irq(s);
+            pthread_mutex_unlock(&priv->lock);
         } else {
             priv->dlm = IO_READ8(data);
         }
@@ -210,36 +234,14 @@ static void serial_handle_io(void *owner,
     serial_op(s, offset, data);
 }
 
-static void handler(int sig, siginfo_t *si, void *uc) {}
-
 int serial_init(serial_dev_t *s, struct bus *bus)
 {
-    sigset_t mask;
-
-    struct sigaction sa = {.sa_flags = SA_SIGINFO, .sa_sigaction = handler};
-    sigemptyset(&sa.sa_mask);
-    if (sigaction(SIGUSR1, &sa, NULL) == -1)
-        return throw_err("Failed to create signal handler");
-
-    /* Block timer signal temporarily. */
-    sigemptyset(&mask);
-    sigaddset(&mask, SIGUSR1);
-    if (sigprocmask(SIG_SETMASK, &mask, NULL) == -1)
-        return throw_err("Failed to block timer signal");
-
     *s = (serial_dev_t){
         .priv = (void *) &serial_dev_priv,
-        .main_tid = pthread_self(),
         .infd = STDIN_FILENO,
         .irq_num = SERIAL_IRQ,
     };
     pthread_create(&s->worker_tid, NULL, (void *) serial_thread, (void *) s);
-
-    /* Unlock the timer signal, so that timer notification
-     * can be delivered.
-     */
-    if (sigprocmask(SIG_UNBLOCK, &mask, NULL) == -1)
-        return throw_err("Failed to unblock timer signal");
 
     dev_init(&s->dev, COM1_PORT_BASE, COM1_PORT_SIZE, s, serial_handle_io);
     bus_register_dev(bus, &s->dev);
