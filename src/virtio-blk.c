@@ -62,12 +62,12 @@ static void virtio_blk_enable_vq(struct virtq *vq)
     if (vq->info.enable)
         return;
     vq->info.enable = true;
-    vq->desc_ring = (struct vring_packed_desc *) vm_guest_to_host(
-        v, (void *) vq->info.desc_addr);
+    vq->desc_ring =
+        (struct vring_packed_desc *) vm_guest_to_host(v, vq->info.desc_addr);
     vq->device_event = (struct vring_packed_desc_event *) vm_guest_to_host(
-        v, (void *) vq->info.device_addr);
+        v, vq->info.device_addr);
     vq->guest_event = (struct vring_packed_desc_event *) vm_guest_to_host(
-        v, (void *) vq->info.driver_addr);
+        v, vq->info.driver_addr);
 
     uint64_t addr = virtio_pci_get_notify_addr(&dev->virtio_pci_dev, vq);
     vm_ioeventfd_register(v, dev->ioeventfd, addr,
@@ -104,13 +104,13 @@ static void virtio_blk_complete_request(struct virtq *vq)
         struct vring_packed_desc *used_desc = desc;
         int r = 0;
 
-        memcpy(&req, vm_guest_to_host(v, (void *) desc->addr), desc->len);
+        memcpy(&req, vm_guest_to_host(v, desc->addr), desc->len);
         if (req.type == VIRTIO_BLK_T_IN || req.type == VIRTIO_BLK_T_OUT) {
             if (!virtq_check_next(desc))
                 return;
             desc = virtq_get_avail(vq);
             req.data_size = desc->len;
-            req.data = vm_guest_to_host(v, (void *) desc->addr);
+            req.data = vm_guest_to_host(v, desc->addr);
 
             ssize_t r;
             if (req.type == VIRTIO_BLK_T_IN)
@@ -127,7 +127,7 @@ static void virtio_blk_complete_request(struct virtq *vq)
         if (!virtq_check_next(desc))
             return;
         desc = virtq_get_avail(vq);
-        req.status = vm_guest_to_host(v, (void *) desc->addr);
+        req.status = vm_guest_to_host(v, desc->addr);
         *req.status = status;
         used_desc->flags ^= (1ULL << VRING_PACKED_DESC_F_USED);
         used_desc->len = r;
