@@ -148,11 +148,11 @@ int vm_run(vm_t *v)
     }
 }
 
-void *vm_guest_to_host(vm_t *v, void *guest)
+void *vm_guest_to_host(vm_t *v, uint64_t guest)
 {
     if (guest < RAM_BASE)
         return NULL;
-    return (uintptr_t) v->mem + guest - RAM_BASE;
+    return (void *) ((uintptr_t) v->mem + guest - RAM_BASE);
 }
 
 void vm_irqfd_register(vm_t *v, int fd, int gsi, int flags)

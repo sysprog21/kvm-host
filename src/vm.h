@@ -31,7 +31,7 @@ int vm_load_diskimg(vm_t *v, const char *diskimg_file);
 int vm_late_init(vm_t *v);
 int vm_run(vm_t *v);
 int vm_irq_line(vm_t *v, int irq, int level);
-void *vm_guest_to_host(vm_t *v, void *guest);
+void *vm_guest_to_host(vm_t *v, uint64_t guest);
 void vm_irqfd_register(vm_t *v, int fd, int gsi, int flags);
 void vm_ioeventfd_register(vm_t *v,
                            int fd,
