@@ -42,6 +42,7 @@ struct pci {
     struct bus pci_bus;
     struct dev pci_bus_dev;
     struct dev pci_addr_dev;
+    struct dev pci_mmio_dev;
 };
 
 void pci_set_bar(struct pci_dev *dev,
