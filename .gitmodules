@@ -1,0 +1,4 @@
+[submodule "src/dtc"]
+	path = src/dtc
+	url = https://git.kernel.org/pub/scm/utils/dtc/dtc.git
+	branch = v1.7.0
