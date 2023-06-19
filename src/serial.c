@@ -13,7 +13,6 @@
 #include "utils.h"
 #include "vm.h"
 
-#define SERIAL_IRQ 4
 #define IO_READ8(data) *((uint8_t *) data)
 #define IO_WRITE8(data, value) ((uint8_t *) data)[0] = value
 
