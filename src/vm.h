@@ -1,7 +1,6 @@
 #pragma once
 
 #define RAM_SIZE (1 << 30)
-#define KERNEL_OPTS "console=ttyS0 pci=conf1"
 
 #include "pci.h"
 #include "serial.h"
