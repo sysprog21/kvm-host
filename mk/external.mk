@@ -38,7 +38,7 @@ LINUX_IMG = $(OUT)/bzImage
 $(LINUX_IMG): $(LINUX_SRC)
 	$(VECHO) "Configuring Linux kernel... "
 	$(Q)cp -f ${CONF}/linux.config $</.config
-	$(Q)(cd $< ; $(MAKE) ARCH=x86 oldconfig $(REDIR)) && $(call notice, [OK])
+	$(Q)(cd $< ; $(MAKE) ARCH=x86 olddefconfig $(REDIR)) && $(call notice, [OK])
 	$(VECHO) "Building Linux kernel image... "
 	$(Q)(cd $< ; $(MAKE) ARCH=x86 bzImage $(PARALLEL) $(REDIR))
 	$(Q)(cd $< ; cp -f arch/x86/boot/bzImage $(TOP)/$(OUT)) && $(call notice, [OK])
