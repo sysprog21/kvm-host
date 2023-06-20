@@ -1,7 +1,6 @@
 #pragma once
 
 #define RAM_SIZE (1 << 30)
-#define KERNEL_OPTS "console=ttyS0 pci=conf1"
 
 #include "pci.h"
 #include "serial.h"
@@ -16,6 +15,7 @@ typedef struct {
     struct pci pci;
     struct diskimg diskimg;
     struct virtio_blk_dev virtio_blk_dev;
+    void *priv;
 } vm_t;
 
 int vm_arch_init(vm_t *v);
