@@ -34,14 +34,24 @@ EXTERNAL_SRC = LINUX BUSYBOX
 $(foreach T,$(EXTERNAL_SRC),$(eval $(download-n-extract)))
 
 # Build Linux kernel image
-LINUX_IMG = $(OUT)/bzImage
+ifeq ($(ARCH), x86_64)
+LINUX_IMG_NAME = bzImage
+ARCH = x86
+else ifeq ($(ARCH), aarch64)
+LINUX_IMG_NAME = Image
+ARCH = arm64
+else
+    $(error Unsupported architecture)
+endif
+LINUX_IMG := $(addprefix $(OUT)/,$(LINUX_IMG_NAME))
+
 $(LINUX_IMG): $(LINUX_SRC)
 	$(VECHO) "Configuring Linux kernel... "
-	$(Q)cp -f ${CONF}/linux.config $</.config
-	$(Q)(cd $< ; $(MAKE) ARCH=x86 oldconfig $(REDIR)) && $(call notice, [OK])
+	$(Q)cp -f ${CONF}/linux-$(ARCH).config $</.config
+	$(Q)(cd $< ; $(MAKE) ARCH=$(ARCH) olddefconfig $(REDIR)) && $(call notice, [OK])
 	$(VECHO) "Building Linux kernel image... "
-	$(Q)(cd $< ; $(MAKE) ARCH=x86 bzImage $(PARALLEL) $(REDIR))
-	$(Q)(cd $< ; cp -f arch/x86/boot/bzImage $(TOP)/$(OUT)) && $(call notice, [OK])
+	$(Q)(cd $< ; $(MAKE) ARCH=$(ARCH) $(LINUX_IMG_NAME) $(PARALLEL) $(REDIR))
+	$(Q)(cd $< ; cp -f arch/$(ARCH)/boot/$(LINUX_IMG_NAME) $(TOP)/$(OUT)) && $(call notice, [OK])
 
 # Build busybox single binary
 BUSYBOX_BIN = $(OUT)/rootfs/bin/busybox
