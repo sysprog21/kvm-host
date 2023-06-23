@@ -13,10 +13,14 @@
 #include "vm-arch.h"
 #include "vm.h"
 
+#define IRQCHIP_TYPE_GIC_V2 1
+#define IRQCHIP_TYPE_GIC_V3 2
+
 typedef struct {
     uint64_t entry;
     size_t initrdsz;
     int gic_fd;
+    int gic_type;
 
     /* This device is a bridge between mmio_bus and io_bus*/
     struct dev iodev;
@@ -28,7 +32,7 @@ static int create_irqchip(vm_t *v)
 {
     vm_arch_priv_t *priv = (vm_arch_priv_t *) v->priv;
     uint64_t dist_addr = ARM_GIC_DIST_BASE;
-    uint64_t redist_addr = ARM_GIC_REDIST_BASE;
+    uint64_t redist_cpui_addr = ARM_GIC_REDIST_CPUI_BASE;
 
     struct kvm_create_device device = {
         .type = KVM_DEV_TYPE_ARM_VGIC_V3,
@@ -38,16 +42,22 @@ static int create_irqchip(vm_t *v)
         .attr = KVM_VGIC_V3_ADDR_TYPE_DIST,
         .addr = (uint64_t) &dist_addr,
     };
-    struct kvm_device_attr redist_attr = {
+    struct kvm_device_attr redist_cpui_attr = {
         .group = KVM_DEV_ARM_VGIC_GRP_ADDR,
         .attr = KVM_VGIC_V3_ADDR_TYPE_REDIST,
-        .addr = (uint64_t) &redist_addr,
+        .addr = (uint64_t) &redist_cpui_addr,
     };
 
+    priv->gic_type = IRQCHIP_TYPE_GIC_V3;
     if (ioctl(v->vm_fd, KVM_CREATE_DEVICE, &device) < 0) {
-        throw_err("Failed to create GICv3 chip.\n");
-        fprintf(stderr, "Your system may not support GICv3.\n");
-        return -1;
+        /* Try to create GICv2 chip */
+        device.type = KVM_DEV_TYPE_ARM_VGIC_V2;
+        if (ioctl(v->vm_fd, KVM_CREATE_DEVICE, &device) < 0)
+            return throw_err("Failed to create IRQ chip\n");
+
+        dist_attr.attr = KVM_VGIC_V2_ADDR_TYPE_DIST;
+        redist_cpui_attr.attr = KVM_VGIC_V2_ADDR_TYPE_CPU;
+        priv->gic_type = IRQCHIP_TYPE_GIC_V2;
     }
 
     priv->gic_fd = device.fd;
@@ -56,9 +66,11 @@ static int create_irqchip(vm_t *v)
         return throw_err(
             "Failed to set the address of the distributor of GIC.\n");
 
-    if (ioctl(priv->gic_fd, KVM_SET_DEVICE_ATTR, &redist_attr) < 0)
-        return throw_err(
-            "Failed to set the address of the redistributor of GIC.\n");
+    if (ioctl(priv->gic_fd, KVM_SET_DEVICE_ATTR, &redist_cpui_attr) < 0)
+        return throw_err("Failed to set the address of the %s of GIC.\n",
+                         device.type == KVM_DEV_TYPE_ARM_VGIC_V3
+                             ? "redistributer"
+                             : "CPU interface");
 
     return 0;
 }
@@ -311,8 +323,11 @@ static int generate_fdt(vm_t *v)
     __FDT(begin_node, "intr");
     uint64_t gic_reg[] = {
         cpu_to_fdt64(ARM_GIC_DIST_BASE), cpu_to_fdt64(ARM_GIC_DIST_SIZE),
-        cpu_to_fdt64(ARM_GIC_REDIST_BASE), cpu_to_fdt64(ARM_GIC_REDIST_SIZE)};
-    __FDT(property_string, "compatible", "arm,gic-v3");
+        cpu_to_fdt64(ARM_GIC_REDIST_CPUI_BASE), cpu_to_fdt64(ARM_GIC_REDIST_CPUI_SIZE)};
+    if (priv->gic_type == IRQCHIP_TYPE_GIC_V3)
+        __FDT(property_string, "compatible", "arm,gic-v3");
+    else
+        __FDT(property_string, "compatible", "arm,cortex-a15-gic");
     __FDT(property_cell, "#interrupt-cells", 3);
     __FDT(property, "interrupt-controller", NULL, 0);
     __FDT(property, "reg", &gic_reg, sizeof(gic_reg));
