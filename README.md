@@ -19,6 +19,7 @@ Download and build Linux kernel from scratch:
 ```shell
 make build/bzImage
 ```
+(or `make build/Image` for Arm64 host)
 
 Download and build Busybox for root file system from scratch:
 ```shell
