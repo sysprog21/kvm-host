@@ -8,16 +8,16 @@ CONF=$(TOP)/configs
 FILE=$(TOP)/target
 
 # Linux kernel
-LINUX_VER = 6.1.28
+LINUX_VER = 6.1.35
 LINUX_SRC_URL = https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-${LINUX_VER}.tar.xz
 LINUX_SRC = $(OUT)/linux-${LINUX_VER}
-LINUX_SRC_SHA1 = 1a541689d3c3c87d93b6665da3c2078d8c97e910
+LINUX_SRC_SHA1 = a7f1f5be2b7c23674c2d1099a8c7d720dda39dc4
 
 # BusyBox
-BUSYBOX_VER=1.36.0
+BUSYBOX_VER=1.36.1
 BUSYBOX_SRC_URL = https://busybox.net/downloads/busybox-${BUSYBOX_VER}.tar.bz2
 BUSYBOX_SRC = $(OUT)/busybox-${BUSYBOX_VER}
-BUSYBOX_SRC_SHA1 = 10cf8331d6b5682a02e9e276870d13db212a02bb
+BUSYBOX_SRC_SHA1 = a5d40ca0201b20909f7a8a561adf57adccc8a877
 
 define download-n-extract
 $(eval $(T)_SRC_ARCHIVE = $(OUT)/$(shell basename $($(T)_SRC_URL)))
