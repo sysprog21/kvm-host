@@ -42,7 +42,7 @@ static void set_input_mode(void)
     atexit(reset_input_mode);
 
     tattr = saved_attributes;
-    tattr.c_lflag &= ~(ICANON | ECHO);
+    tattr.c_lflag &= ~(ICANON | ECHO | ISIG);
     tcsetattr(STDIN_FILENO, TCSANOW, &tattr);
 }
 

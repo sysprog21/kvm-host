@@ -97,14 +97,28 @@ static void *serial_thread(serial_dev_t *s)
     return NULL;
 }
 
+#define TERMINAL_ESCAPE_CHAR 0x01
+#define TERMINAL_EXIT_CHAR 'x'
+
 void serial_console(serial_dev_t *s)
 {
     struct serial_dev_priv *priv = (struct serial_dev_priv *) s->priv;
+    static bool escaped = false;
 
     while (!fifo_is_full(&priv->rx_buf) && serial_readable(s, 0)) {
         char c;
         if (read(s->infd, &c, 1) == -1)
             break;
+        if (escaped && c == TERMINAL_EXIT_CHAR) {
+            /* Terminate */
+            fprintf(stderr, "\n");
+            exit(0);
+        }
+        if (!escaped && c == TERMINAL_ESCAPE_CHAR) {
+            escaped = true;
+            continue;
+        }
+        escaped = false;
         if (!fifo_put(&priv->rx_buf, c))
             break;
         __atomic_store_n(&priv->lsr, priv->lsr | UART_LSR_DR, __ATOMIC_RELEASE);

@@ -42,6 +42,8 @@ containing concatenated `bootsect.o + setup.o + misc.o + piggy.o`. `initrd` is t
 initial RAM disk image, which is an optional argument.
 `disk-image` is the path to disk image which can be mounted as a block device via virtio. For the reference Linux guest, ext4 filesystem is used for disk image.
 
+To exit kvm-host, press "Ctrl-A", release both keys, and then press "x".
+
 ## License
 
 `kvm-host` is released under the BSD 2 clause license. Use of this source code is governed by
