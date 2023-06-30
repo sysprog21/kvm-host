@@ -100,7 +100,7 @@ int vm_load_diskimg(vm_t *v, const char *diskimg_file)
 void vm_handle_io(vm_t *v, struct kvm_run *run)
 {
     uint64_t addr = run->io.port;
-    void *data = (void *) run + run->io.data_offset;
+    void *data = (void *) ((uintptr_t) run + run->io.data_offset);
     bool is_write = run->io.direction == KVM_EXIT_IO_OUT;
 
     for (int i = 0; i < run->io.count; i++) {

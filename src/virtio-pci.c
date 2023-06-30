@@ -64,7 +64,7 @@ static void virtio_pci_select_virtq(struct virtio_pci_dev *dev)
 
     if (select < config->num_queues) {
         uint64_t offset = offsetof(struct virtio_pci_common_cfg, queue_size);
-        memcpy((void *) config + offset, &dev->vq[select].info,
+        memcpy((void *) ((uintptr_t) config + offset), &dev->vq[select].info,
                sizeof(struct virtq_info));
     } else {
         config->queue_size = 0;
@@ -89,7 +89,7 @@ static void virtio_pci_space_write(struct virtio_pci_dev *dev,
                                    uint8_t size)
 {
     if (offset < offsetof(struct virtio_pci_config, dev_cfg)) {
-        memcpy((void *) &dev->config + offset, data, size);
+        memcpy((void *) ((uintptr_t) &dev->config + offset), data, size);
         switch (offset) {
         case VIRTIO_PCI_COMMON_DFSELECT:
             virtio_pci_select_device_feature(dev);
@@ -115,8 +115,9 @@ static void virtio_pci_space_write(struct virtio_pci_dev *dev,
                 uint16_t select = dev->config.common_cfg.queue_select;
                 uint64_t info_offset = offset - VIRTIO_PCI_COMMON_Q_SIZE;
                 if (select < dev->config.common_cfg.num_queues)
-                    memcpy((void *) &dev->vq[select].info + info_offset, data,
-                           size);
+                    memcpy((void *) ((uintptr_t) &dev->vq[select].info +
+                                     info_offset),
+                           data, size);
             }
             /* guest notify buffer avail */
             else if (offset ==
@@ -129,7 +130,7 @@ static void virtio_pci_space_write(struct virtio_pci_dev *dev,
     }
     /* dev config write */
     uint64_t dev_offset = offset - offsetof(struct virtio_pci_config, dev_cfg);
-    memcpy((void *) dev->config.dev_cfg + dev_offset, data, size);
+    memcpy((void *) ((uintptr_t) dev->config.dev_cfg + dev_offset), data, size);
 }
 
 static void virtio_pci_space_read(struct virtio_pci_dev *dev,
@@ -138,7 +139,7 @@ static void virtio_pci_space_read(struct virtio_pci_dev *dev,
                                   uint8_t size)
 {
     if (offset < offsetof(struct virtio_pci_config, dev_cfg)) {
-        memcpy(data, (void *) &dev->config + offset, size);
+        memcpy(data, (void *) ((uintptr_t) &dev->config + offset), size);
         if (offset == offsetof(struct virtio_pci_config, isr_cap)) {
             dev->config.isr_cap.isr_status = 0;
         }
@@ -146,7 +147,8 @@ static void virtio_pci_space_read(struct virtio_pci_dev *dev,
         /* dev config read */
         uint64_t dev_offset =
             offset - offsetof(struct virtio_pci_config, dev_cfg);
-        memcpy(data, (void *) dev->config.dev_cfg + dev_offset, size);
+        memcpy(data, (void *) ((uintptr_t) dev->config.dev_cfg + dev_offset),
+               size);
     }
 }
 
@@ -169,7 +171,8 @@ static void virtio_pci_set_cap(struct virtio_pci_dev *dev, uint8_t next)
     struct virtio_pci_cap *caps[VIRTIO_PCI_CAP_NUM + 1];
 
     for (int i = 1; i < VIRTIO_PCI_CAP_NUM + 1; i++) {
-        caps[i] = dev->pci_dev.hdr + next;
+        caps[i] =
+            (struct virtio_pci_cap *) ((uintptr_t) dev->pci_dev.hdr + next);
         *caps[i] = (struct virtio_pci_cap){
             .cap_vndr = PCI_CAP_ID_VNDR,
             .cfg_type = i,

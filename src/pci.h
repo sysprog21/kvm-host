@@ -19,9 +19,10 @@ union pci_config_address {
     uint32_t value;
 };
 
-#define PCI_HDR_READ(hdr, offset, width) (*((uint##width##_t *) (hdr + offset)))
+#define PCI_HDR_READ(hdr, offset, width) \
+    (*((uint##width##_t *) ((uintptr_t) hdr + offset)))
 #define PCI_HDR_WRITE(hdr, offset, value, width) \
-    ((uint##width##_t *) (hdr + offset))[0] = value
+    ((uint##width##_t *) ((uintptr_t) hdr + offset))[0] = value
 #define PCI_BAR_OFFSET(bar) (PCI_BASE_ADDRESS_0 + ((bar) << 2))
 
 struct pci_dev {

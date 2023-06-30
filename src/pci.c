@@ -11,7 +11,7 @@ static void pci_address_io(void *owner,
                            uint8_t size)
 {
     struct pci *pci = (struct pci *) owner;
-    void *p = (void *) &pci->pci_addr + offset;
+    void *p = (void *) ((uintptr_t) &pci->pci_addr + offset);
     /* The data in port 0xCF8 is as an address when Guest Linux accesses the
      * configuration space.
      */
@@ -81,7 +81,7 @@ static void pci_config_write(struct pci_dev *dev,
                              uint64_t offset,
                              uint8_t size)
 {
-    void *p = dev->hdr + offset;
+    void *p = (void *) ((uintptr_t) dev->hdr + offset);
 
     memcpy(p, data, size);
     if (offset == PCI_COMMAND) {
@@ -100,7 +100,7 @@ static void pci_config_read(struct pci_dev *dev,
                             uint64_t offset,
                             uint8_t size)
 {
-    void *p = dev->hdr + offset;
+    void *p = (void *) ((uintptr_t) dev->hdr + offset);
     memcpy(data, p, size);
 }
 
