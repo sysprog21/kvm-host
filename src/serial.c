@@ -71,9 +71,6 @@ static int serial_readable(serial_dev_t *s, int timeout)
     return (poll(&pollfd, 1, timeout) > 0) && (pollfd.revents & POLLIN);
 }
 
-#define FREQ_NS ((int) (1.0e6))
-#define NS_PER_SEC ((int) (1.0e9))
-
 /* global state to stop the loop of thread */
 static volatile bool thread_stop = false;
 
