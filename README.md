@@ -10,6 +10,11 @@ capable of running Linux kernel partially.
 
 ## Build and Run
 
+Fetch required submodules (only necessary for ARM build):
+```shell
+git submodule update --init --recursive
+```
+
 To compile:
 ```shell
 make
