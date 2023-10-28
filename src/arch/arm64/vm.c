@@ -151,7 +151,7 @@ int vm_arch_init_platform_device(vm_t *v)
 }
 
 /* The arm64 kernel header
- * Reference https://docs.kernel.org/arm64/booting.html
+ * Reference https://docs.kernel.org/arch/arm64/booting.html
  */
 typedef struct {
     uint32_t code0;       /* Executable code */
