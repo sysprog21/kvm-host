@@ -100,7 +100,5 @@ int main(int argc, char *argv[])
     vm_run(&vm);
     vm_exit(&vm);
 
-    reset_input_mode();
-
     return 0;
 }

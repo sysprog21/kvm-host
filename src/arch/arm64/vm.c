@@ -130,8 +130,6 @@ int vm_arch_init_platform_device(vm_t *v)
     vm_arch_priv_t *priv = (vm_arch_priv_t *) v->priv;
 
     /* Initial system bus */
-    bus_init(&v->io_bus);
-    bus_init(&v->mmio_bus);
     dev_init(&priv->iodev, ARM_IOPORT_BASE, ARM_IOPORT_SIZE, v, pio_handler);
     bus_register_dev(&v->mmio_bus, &priv->iodev);
 
@@ -151,7 +149,7 @@ int vm_arch_init_platform_device(vm_t *v)
 }
 
 /* The arm64 kernel header
- * Reference https://docs.kernel.org/arm64/booting.html
+ * Reference https://docs.kernel.org/arch/arm64/booting.html
  */
 typedef struct {
     uint32_t code0;       /* Executable code */
@@ -358,7 +356,7 @@ static int generate_fdt(vm_t *v)
     __FDT(property, "dma-coherent", NULL, 0);
     uint32_t pci_bus_range[] = {cpu_to_fdt32(0), cpu_to_fdt32(0)};
     __FDT(property, "bus-range", &pci_bus_range, sizeof(pci_bus_range));
-    /* reg should contains the address of configuration space */
+    /* reg should contain the address of configuration space */
     uint64_t pci_reg[] = {cpu_to_fdt64(ARM_PCI_CFG_BASE),
                           cpu_to_fdt64(ARM_PCI_CFG_SIZE)};
     __FDT(property, "reg", &pci_reg, sizeof(pci_reg));
