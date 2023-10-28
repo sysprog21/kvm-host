@@ -130,8 +130,6 @@ int vm_arch_init_platform_device(vm_t *v)
     vm_arch_priv_t *priv = (vm_arch_priv_t *) v->priv;
 
     /* Initial system bus */
-    bus_init(&v->io_bus);
-    bus_init(&v->mmio_bus);
     dev_init(&priv->iodev, ARM_IOPORT_BASE, ARM_IOPORT_SIZE, v, pio_handler);
     bus_register_dev(&v->mmio_bus, &priv->iodev);
 
