@@ -358,7 +358,7 @@ static int generate_fdt(vm_t *v)
     __FDT(property, "dma-coherent", NULL, 0);
     uint32_t pci_bus_range[] = {cpu_to_fdt32(0), cpu_to_fdt32(0)};
     __FDT(property, "bus-range", &pci_bus_range, sizeof(pci_bus_range));
-    /* reg should contains the address of configuration space */
+    /* reg should contain the address of configuration space */
     uint64_t pci_reg[] = {cpu_to_fdt64(ARM_PCI_CFG_BASE),
                           cpu_to_fdt64(ARM_PCI_CFG_SIZE)};
     __FDT(property, "reg", &pci_reg, sizeof(pci_reg));
