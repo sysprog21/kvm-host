@@ -8,10 +8,10 @@ CONF=$(TOP)/configs
 FILE=$(TOP)/target
 
 # Linux kernel
-LINUX_VER = 6.1.35
+LINUX_VER = 6.1.100
 LINUX_SRC_URL = https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-${LINUX_VER}.tar.xz
 LINUX_SRC = $(OUT)/linux-${LINUX_VER}
-LINUX_SRC_SHA1 = a7f1f5be2b7c23674c2d1099a8c7d720dda39dc4
+LINUX_SRC_SHA1 = 49d075022276c627bf9ef583d5415d46a9aec665
 
 # BusyBox
 BUSYBOX_VER=1.36.1
