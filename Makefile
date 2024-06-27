@@ -31,7 +31,8 @@ OBJS := \
 	virtq.o \
 	virtio-blk.o \
 	diskimg.o \
-	main.o
+	main.o \
+	virtio-net.o
 
 ifeq ($(ARCH), x86_64)
 	CFLAGS += -I$(PWD)/src/arch/x86
