@@ -93,7 +93,7 @@ int main(int argc, char *argv[])
         return throw_err("Failed to load initrd");
     if (diskimg_file && vm_load_diskimg(&vm, diskimg_file) < 0)
         return throw_err("Failed to load disk image");
-
+    virtio_net_init_pci(&vm.virtio_net_dev, &vm.pci, &vm.io_bus, &vm.mmio_bus);
     if (vm_late_init(&vm) < 0)
         return -1;
 
