@@ -96,7 +96,7 @@ int vm_arch_init(vm_t *v)
     __u64 map_addr = 0xffffc000;
     if (ioctl(v->vm_fd, KVM_SET_IDENTITY_MAP_ADDR, &map_addr) < 0)
         return throw_err("Failed to set identity map address");
-
+    
     if (ioctl(v->vm_fd, KVM_CREATE_IRQCHIP, 0) < 0)
         return throw_err("Failed to create IRQ chip");
 
@@ -123,6 +123,7 @@ int vm_arch_init_platform_device(vm_t *v)
     if (serial_init(&v->serial, &v->io_bus))
         return throw_err("Failed to init UART device");
     virtio_blk_init(&v->virtio_blk_dev);
+    virtio_net_init(&v->virtio_net_dev);
     return 0;
 }
 
