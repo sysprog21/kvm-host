@@ -25,7 +25,6 @@ void virtq_disable(struct virtq *vq) {}
 void virtq_init(struct virtq *vq, void *dev, struct virtq_ops *ops)
 {
     vq->info.size = VIRTQ_SIZE;
-    vq->info.notify_off = 0;
     vq->info.enable = 0;
     vq->next_avail_idx = 0;
     vq->used_wrap_count = 1;
