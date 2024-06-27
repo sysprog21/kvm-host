@@ -1,0 +1,4 @@
+#pragma once
+
+#define VIRTIO_NET_VIRTQ_NUM 2
+#define VIRTIO_NET_PCI_CLASS 0x020000
