@@ -68,11 +68,8 @@ static void vm_init_cpu_id(vm_t *v)
 #define MSR_IA32_MISC_ENABLE_FAST_STRING \
     (1ULL << MSR_IA32_MISC_ENABLE_FAST_STRING_BIT)
 
-#define KVM_MSR_ENTRY(_index, _data)   \
-    (struct kvm_msr_entry)             \
-    {                                  \
-        .index = _index, .data = _data \
-    }
+#define KVM_MSR_ENTRY(_index, _data) \
+    (struct kvm_msr_entry) { .index = _index, .data = _data }
 static void vm_init_msrs(vm_t *v)
 {
     int ndx = 0;

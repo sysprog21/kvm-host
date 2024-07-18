@@ -320,8 +320,11 @@ static int generate_fdt(vm_t *v)
     /* Create /intr node: The interrupt controller */
     __FDT(begin_node, "intr");
     uint64_t gic_reg[] = {
-        cpu_to_fdt64(ARM_GIC_DIST_BASE), cpu_to_fdt64(ARM_GIC_DIST_SIZE),
-        cpu_to_fdt64(ARM_GIC_REDIST_CPUI_BASE), cpu_to_fdt64(ARM_GIC_REDIST_CPUI_SIZE)};
+        cpu_to_fdt64(ARM_GIC_DIST_BASE),
+        cpu_to_fdt64(ARM_GIC_DIST_SIZE),
+        cpu_to_fdt64(ARM_GIC_REDIST_CPUI_BASE),
+        cpu_to_fdt64(ARM_GIC_REDIST_CPUI_SIZE),
+    };
     if (priv->gic_type == IRQCHIP_TYPE_GIC_V3)
         __FDT(property_string, "compatible", "arm,gic-v3");
     else
