@@ -6,6 +6,7 @@
 #include <asm/e820.h>
 #include <linux/kvm.h>
 #include <linux/kvm_para.h>
+#include <stddef.h>
 #include <string.h>
 #include <sys/ioctl.h>
 
@@ -130,8 +131,15 @@ int vm_arch_load_image(vm_t *v, void *data, size_t datasz)
     void *cmdline = ((uint8_t *) v->mem) + 0x20000;
     void *kernel = ((uint8_t *) v->mem) + 0x100000;
 
+    /* According to https://www.kernel.org/doc/html/next/x86/boot.html,
+     * the first step in loading a Linux kernel should be to setup the boot
+     * parameters (struct boot_params) and initialize it to all zero. Then,
+     * the setup header at offset 0x01f1 of kernel image on should be loaded
+     * into struct boot_params. */
     memset(boot, 0, sizeof(struct boot_params));
-    memmove(boot, data, sizeof(struct boot_params));
+    memmove((void *) ((uintptr_t) boot + offsetof(struct boot_params, hdr)),
+            (void *) ((uintptr_t) data + offsetof(struct boot_params, hdr)),
+            sizeof(struct setup_header));
 
     size_t setup_sectors = boot->hdr.setup_sects;
     size_t setupsz = (setup_sectors + 1) * 512;
