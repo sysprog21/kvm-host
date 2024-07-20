@@ -5,6 +5,7 @@
 #include "pci.h"
 #include "serial.h"
 #include "virtio-blk.h"
+#include "virtio-net.h"
 
 typedef struct {
     int kvm_fd, vm_fd, vcpu_fd;
@@ -15,6 +16,7 @@ typedef struct {
     struct pci pci;
     struct diskimg diskimg;
     struct virtio_blk_dev virtio_blk_dev;
+    struct virtio_net_dev virtio_net_dev;
     void *priv;
 } vm_t;
 
