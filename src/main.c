@@ -93,6 +93,8 @@ int main(int argc, char *argv[])
         return throw_err("Failed to load initrd");
     if (diskimg_file && vm_load_diskimg(&vm, diskimg_file) < 0)
         return throw_err("Failed to load disk image");
+    if (vm_enable_net(&vm) < 0)
+        fprintf(stderr, "Failed to enable virtio-net device\n");
 
     if (vm_late_init(&vm) < 0)
         return -1;
