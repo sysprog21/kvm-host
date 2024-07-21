@@ -30,6 +30,7 @@ OBJS := \
 	virtio-pci.o \
 	virtq.o \
 	virtio-blk.o \
+	virtio-net.o \
 	diskimg.o \
 	main.o
 

@@ -97,6 +97,14 @@ int vm_load_diskimg(vm_t *v, const char *diskimg_file)
     return 0;
 }
 
+int vm_enable_net(vm_t *v)
+{
+    if (!virtio_net_init(&v->virtio_net_dev))
+        return -1;
+    virtio_net_init_pci(&v->virtio_net_dev, &v->pci, &v->io_bus, &v->mmio_bus);
+    return 0;
+}
+
 void vm_handle_io(vm_t *v, struct kvm_run *run)
 {
     uint64_t addr = run->io.port;

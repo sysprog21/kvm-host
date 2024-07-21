@@ -31,6 +31,7 @@ int vm_load_image(vm_t *v, const char *image_path);
 int vm_load_initrd(vm_t *v, const char *initrd_path);
 int vm_load_diskimg(vm_t *v, const char *diskimg_file);
 int vm_late_init(vm_t *v);
+int vm_enable_net(vm_t *v);
 int vm_run(vm_t *v);
 int vm_irq_line(vm_t *v, int irq, int level);
 void *vm_guest_to_host(vm_t *v, uint64_t guest);
