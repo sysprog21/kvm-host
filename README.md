@@ -26,11 +26,6 @@ make build/bzImage
 ```
 (or `make build/Image` for Arm64 host)
 
-Download and build Busybox for root file system from scratch:
-```shell
-make rootfs
-```
-
 Run Linux guest with `kvm-host`:
 ```shell
 make check
