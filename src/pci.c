@@ -145,14 +145,13 @@ static void pci_mmio_io(void *owner,
 void pci_set_bar(struct pci_dev *dev,
                  uint8_t bar,
                  uint32_t bar_size,
-                 bool is_io_space,
+                 uint32_t layout,
                  dev_io_fn do_io)
 {
-    /* TODO: mem type, prefetch */
     /* FIXME: bar_size must be power of 2 */
-    PCI_HDR_WRITE(dev->hdr, PCI_BAR_OFFSET(bar), is_io_space, 32);
+    PCI_HDR_WRITE(dev->hdr, PCI_BAR_OFFSET(bar), layout, 32);
     dev->bar_size[bar] = bar_size;
-    dev->bar_is_io_space[bar] = is_io_space;
+    dev->bar_is_io_space[bar] = layout & 0x1U;  // Get the bit[0] of layout
     dev_init(&dev->space_dev[bar], 0, bar_size, dev, do_io);
 }
 

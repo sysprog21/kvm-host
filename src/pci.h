@@ -46,10 +46,39 @@ struct pci {
     struct dev pci_mmio_dev;
 };
 
+/**
+ * @brief Configure and initialize a PCI Base Address Register (BAR).
+ *
+ * This writes the caller-provided layout bitmask into the BAR register
+ * in the PCI configuration header, records the region size and I/O type,
+ * and sets up the address space (MMIO or port I/O) with the specified
+ * callback.
+ *
+ * @param dev         Pointer to the pci_dev representing the device.
+ * @param bar         BAR index to program (0–5 in a standard PCI header).
+ * @param bar_size    Size of the BAR region in bytes (must be a power of two).
+ * @param layout      Bitmask of PCI_BASE_ADDRESS_* flags defined in
+ *                    `/usr/include/linux/pci_regs.h`:
+ *                    - Bit 0: I/O space (1) vs. memory space (0)
+ *                      (`PCI_BASE_ADDRESS_SPACE_IO` or
+ *                       `PCI_BASE_ADDRESS_SPACE_MEMORY`)
+ *                    - Bits [2:1]: Memory decoding type
+ *                      (`PCI_BASE_ADDRESS_MEM_TYPE_32` or
+ *                       `PCI_BASE_ADDRESS_MEM_TYPE_64`)
+ *                    - Bit 3: Prefetchable flag for memory
+ *                      (`PCI_BASE_ADDRESS_MEM_PREFETCH`)
+ * @param do_io       Callback (dev_io_fn) invoked on accesses within
+ *                    the BAR region.
+ *
+ * @note bar_size must be a power of two for correct decoding by the
+ *       PCI framework.
+ * @note For 64-bit memory BARs, callers must reserve the next BAR index
+ *       (n+1) for the high 32 bits if required by the platform.
+ */
 void pci_set_bar(struct pci_dev *dev,
                  uint8_t bar,
                  uint32_t bar_size,
-                 bool is_io_space,
+                 uint32_t is_io_space,
                  dev_io_fn do_io);
 void pci_set_status(struct pci_dev *dev, uint16_t status);
 void pci_dev_register(struct pci_dev *dev);
