@@ -52,8 +52,9 @@ static void pci_command_bar(struct pci_dev *dev)
     bool enable_mem =
         PCI_HDR_READ(dev->hdr, PCI_COMMAND, 16) & PCI_COMMAND_MEMORY;
     for (int i = 0; i < PCI_STD_NUM_BARS; i++) {
-        struct bus *bus = dev->bar_is_io_space[i] ? dev->io_bus : dev->mmio_bus;
-        bool enable = dev->bar_is_io_space[i] ? enable_io : enable_mem;
+        bool is_io = dev->bar_layout[i] & PCI_BASE_ADDRESS_SPACE_IO;
+        struct bus *bus = is_io ? dev->io_bus : dev->mmio_bus;
+        bool enable = is_io ? enable_io : enable_mem;
 
         if (enable)
             pci_activate_bar(dev, i, bus);
@@ -71,9 +72,9 @@ static void pci_config_bar(struct pci_dev *dev, uint8_t bar)
 {
     uint32_t mask = ~(dev->bar_size[bar] - 1);
     uint32_t old_bar = PCI_HDR_READ(dev->hdr, PCI_BAR_OFFSET(bar), 32);
-    uint32_t new_bar = (old_bar & mask) | dev->bar_is_io_space[bar];
+    uint32_t new_bar = (old_bar & mask) | (dev->bar_layout[bar] & ~mask);
     PCI_HDR_WRITE(dev->hdr, PCI_BAR_OFFSET(bar), new_bar, 32);
-    dev->space_dev[bar].base = new_bar;
+    dev->space_dev[bar].base = new_bar & mask;
 }
 
 static void pci_config_write(struct pci_dev *dev,
@@ -148,10 +149,14 @@ void pci_set_bar(struct pci_dev *dev,
                  uint32_t layout,
                  dev_io_fn do_io)
 {
-    /* FIXME: bar_size must be power of 2 */
+    /*
+     * FIXME: bar_size must be a power of two.
+     * TODO: 64-bit BARs need a second adjacent slot for the upper dword;
+     * only 32-bit memory and I/O BARs are wired up here.
+     */
     PCI_HDR_WRITE(dev->hdr, PCI_BAR_OFFSET(bar), layout, 32);
     dev->bar_size[bar] = bar_size;
-    dev->bar_is_io_space[bar] = layout & 0x1U;  // Get the bit[0] of layout
+    dev->bar_layout[bar] = layout;
     dev_init(&dev->space_dev[bar], 0, bar_size, dev, do_io);
 }
 
