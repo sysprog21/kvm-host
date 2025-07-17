@@ -270,7 +270,7 @@ void virtio_pci_init(struct virtio_pci_dev *dev,
     pci_set_status(&dev->pci_dev, PCI_STATUS_CAP_LIST | PCI_STATUS_INTERRUPT);
     pci_set_bar(&dev->pci_dev, 0, 0x100,
                 PCI_BASE_ADDRESS_SPACE_MEMORY | PCI_BASE_ADDRESS_MEM_TYPE_32
-                /* | PCI_BASE_ADDRESS_MEM_PREFETCH */,
+                /* | PCI_BASE_ADDRESS_MEM_PREFETCH: uncomment if prefetchable */,
                 virtio_pci_space_io);
     virtio_pci_set_cap(dev, cap_list);
     dev->device_feature |=
