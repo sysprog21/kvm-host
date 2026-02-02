@@ -378,10 +378,12 @@ static int generate_fdt(vm_t *v)
     __FDT(property, "ranges", &pci_ranges, sizeof(pci_ranges));
     /* interrupt-map contains the interrupt mapping between the PCI device and
      * the IRQ number of interrupt controller.
-     * virtio-blk is the only PCI device.
+     * interrupt-map: map each PCI device’s INTA#: GIC SPI
      */
     struct virtio_blk_dev *virtio_blk = &v->virtio_blk_dev;
     struct pci_dev *virtio_blk_pci = (struct pci_dev *) virtio_blk;
+    struct virtio_net_dev *virtio_net = &v->virtio_net_dev;
+    struct pci_dev *virtio_net_pci = (struct pci_dev *) virtio_net;
     struct {
         uint32_t pci_hi;
         uint64_t pci_addr;
@@ -390,15 +392,28 @@ static int generate_fdt(vm_t *v)
         uint32_t gic_type;
         uint32_t gic_irqn;
         uint32_t gic_irq_type;
-    } __attribute__((packed)) pci_irq_map[] = {{
-        cpu_to_fdt32(virtio_blk_pci->config_dev.base & ~(1UL << 31)),
-        0,
-        cpu_to_fdt32(1),
-        cpu_to_fdt32(FDT_PHANDLE_GIC),
-        cpu_to_fdt32(ARM_FDT_IRQ_TYPE_SPI),
-        cpu_to_fdt32(VIRTIO_BLK_IRQ),
-        cpu_to_fdt32(ARM_FDT_IRQ_EDGE_TRIGGER),
-    }};
+    } __attribute__((packed)) pci_irq_map[] = {
+        /* virtio-blk: SPI VIRTIO_BLK_IRQ */
+        {
+            cpu_to_fdt32(virtio_blk_pci->config_dev.base & ~(1UL << 31)),
+            0,
+            cpu_to_fdt32(1),
+            cpu_to_fdt32(FDT_PHANDLE_GIC),
+            cpu_to_fdt32(ARM_FDT_IRQ_TYPE_SPI),
+            cpu_to_fdt32(VIRTIO_BLK_IRQ),
+            cpu_to_fdt32(ARM_FDT_IRQ_EDGE_TRIGGER),
+        },
+        /* virtio-net: SPI VIRTIO_NET_IRQ */
+        {
+            cpu_to_fdt32(virtio_net_pci->config_dev.base & ~(1UL << 31)),
+            0,
+            cpu_to_fdt32(1),
+            cpu_to_fdt32(FDT_PHANDLE_GIC),
+            cpu_to_fdt32(ARM_FDT_IRQ_TYPE_SPI),
+            cpu_to_fdt32(VIRTIO_NET_IRQ),
+            cpu_to_fdt32(ARM_FDT_IRQ_EDGE_TRIGGER),
+        },
+    };
     __FDT(property, "interrupt-map", &pci_irq_map, sizeof(pci_irq_map));
     __FDT(end_node); /* End of /pci node */
 
