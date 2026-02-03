@@ -10,6 +10,11 @@ capable of running Linux kernel partially.
 
 ## Build and Run
 
+Ensure the following prerequisites are installed on Ubuntu 24.04:
+```shell
+sudo apt install -y flex bison libelf-dev
+```
+
 Fetch required submodules (only necessary for ARM build):
 ```shell
 git submodule update --init --recursive
@@ -33,6 +38,8 @@ make check
 
 ## Usage
 
+### Start Emulator
+
 ```
 build/kvm-host -k bzImage [-i initrd] [-d disk-image]
 ```
@@ -41,6 +48,8 @@ build/kvm-host -k bzImage [-i initrd] [-d disk-image]
 containing concatenated `bootsect.o + setup.o + misc.o + piggy.o`. `initrd` is the path to
 initial RAM disk image, which is an optional argument.
 `disk-image` is the path to disk image which can be mounted as a block device via virtio. For the reference Linux guest, ext4 filesystem is used for disk image.
+
+### Exit Emulator
 
 To exit kvm-host, press "Ctrl-A", release both keys, and then press "x".
 
