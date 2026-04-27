@@ -8,10 +8,10 @@ CONF=$(TOP)/configs
 FILE=$(TOP)/target
 
 # Linux kernel
-LINUX_VER = 6.1.100
-LINUX_SRC_URL = https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-${LINUX_VER}.tar.xz
+LINUX_VER = 7.0
+LINUX_SRC_URL = https://cdn.kernel.org/pub/linux/kernel/v7.x/linux-${LINUX_VER}.tar.xz
 LINUX_SRC = $(OUT)/linux-${LINUX_VER}
-LINUX_SRC_SHA1 = 49d075022276c627bf9ef583d5415d46a9aec665
+LINUX_SRC_SHA1 = 0a043b4cdeae371edc7fe956898c4304c8f702c0
 
 # BusyBox
 BUSYBOX_VER=1.36.1
@@ -48,7 +48,17 @@ LINUX_IMG := $(addprefix $(OUT)/,$(LINUX_IMG_NAME))
 $(LINUX_IMG): $(LINUX_SRC)
 	$(VECHO) "Configuring Linux kernel... "
 	$(Q)cp -f ${CONF}/linux-$(ARCH).config $</.config
-	$(Q)(cd $< ; $(MAKE) ARCH=$(ARCH) olddefconfig $(REDIR)) && $(call notice, [OK])
+	$(Q)cd $< && \
+	    out=$$(KCONFIG_WARN_UNKNOWN_SYMBOLS=1 $(MAKE) ARCH=$(ARCH) olddefconfig 2>&1) \
+	        || { echo "$$out" ; exit 1 ; } ; \
+	    warnings=$$(echo "$$out" | grep "warning: unknown symbol" || true) ; \
+	    if [ -n "$$warnings" ] ; then \
+	        $(PRINTF) "\nStale Kconfig symbols in configs/linux-$(ARCH).config (no longer exist in Linux $(LINUX_VER)):\n" ; \
+	        echo "$$warnings" ; \
+	        $(PRINTF) "\nEdit configs/linux-$(ARCH).config to remove or rename them, then retry.\n" ; \
+	        exit 1 ; \
+	    fi
+	$(Q)$(call notice, [OK])
 	$(VECHO) "Building Linux kernel image... "
 	$(Q)(cd $< ; $(MAKE) ARCH=$(ARCH) $(LINUX_IMG_NAME) $(PARALLEL) $(REDIR))
 	$(Q)(cd $< ; cp -f arch/$(ARCH)/boot/$(LINUX_IMG_NAME) $(TOP)/$(OUT)) && $(call notice, [OK])
