@@ -69,8 +69,11 @@ static void vm_init_cpu_id(vm_t *v)
 #define MSR_IA32_MISC_ENABLE_FAST_STRING \
     (1ULL << MSR_IA32_MISC_ENABLE_FAST_STRING_BIT)
 
-#define KVM_MSR_ENTRY(_index, _data) \
-    (struct kvm_msr_entry) { .index = _index, .data = _data }
+#define KVM_MSR_ENTRY(_index, _data)   \
+    (struct kvm_msr_entry)             \
+    {                                  \
+        .index = _index, .data = _data \
+    }
 static void vm_init_msrs(vm_t *v)
 {
     int ndx = 0;
@@ -155,12 +158,12 @@ int vm_arch_load_image(vm_t *v, void *data, size_t datasz)
 
     /* setup E820 memory map to report usable address ranges for initrd */
     unsigned int idx = 0;
-    boot->e820_table[idx++] = (struct boot_e820_entry){
+    boot->e820_table[idx++] = (struct boot_e820_entry) {
         .addr = 0x0,
         .size = ISA_START_ADDRESS - 1,
         .type = E820_RAM,
     };
-    boot->e820_table[idx++] = (struct boot_e820_entry){
+    boot->e820_table[idx++] = (struct boot_e820_entry) {
         .addr = ISA_END_ADDRESS,
         .size = RAM_SIZE - ISA_END_ADDRESS,
         .type = E820_RAM,

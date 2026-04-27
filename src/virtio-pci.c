@@ -173,7 +173,7 @@ static void virtio_pci_set_cap(struct virtio_pci_dev *dev, uint8_t next)
     for (int i = 1; i < VIRTIO_PCI_CAP_NUM + 1; i++) {
         caps[i] =
             (struct virtio_pci_cap *) ((uintptr_t) dev->pci_dev.hdr + next);
-        *caps[i] = (struct virtio_pci_cap){
+        *caps[i] = (struct virtio_pci_cap) {
             .cap_vndr = PCI_CAP_ID_VNDR,
             .cfg_type = i,
             .cap_len = sizeof(struct virtio_pci_cap),
