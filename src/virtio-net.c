@@ -29,7 +29,7 @@ static volatile bool thread_stop = false;
 static int virtio_net_virtq_available_rx(struct virtio_net_dev *dev,
                                          int timeout)
 {
-    struct pollfd pollfd = (struct pollfd){
+    struct pollfd pollfd = (struct pollfd) {
         .fd = dev->tapfd,
         .events = POLLIN,
     };

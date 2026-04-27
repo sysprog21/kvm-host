@@ -64,7 +64,7 @@ static void serial_update_irq(serial_dev_t *s)
 
 static int serial_readable(serial_dev_t *s, int timeout)
 {
-    struct pollfd pollfd = (struct pollfd){
+    struct pollfd pollfd = (struct pollfd) {
         .fd = s->infd,
         .events = POLLIN,
     };
@@ -246,7 +246,7 @@ static void serial_handle_io(void *owner,
 
 int serial_init(serial_dev_t *s, struct bus *bus)
 {
-    *s = (serial_dev_t){
+    *s = (serial_dev_t) {
         .priv = (void *) &serial_dev_priv,
         .infd = STDIN_FILENO,
         .irq_num = SERIAL_IRQ,

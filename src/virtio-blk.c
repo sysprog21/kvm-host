@@ -23,7 +23,7 @@ static void virtio_blk_notify_used(struct virtq *vq)
 
 static int virtio_blk_virtq_available(struct virtio_blk_dev *dev, int timeout)
 {
-    struct pollfd pollfd = (struct pollfd){
+    struct pollfd pollfd = (struct pollfd) {
         .fd = dev->ioeventfd,
         .events = POLLIN,
     };
