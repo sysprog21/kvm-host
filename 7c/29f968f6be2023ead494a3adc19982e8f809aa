@@ -1,0 +1,35 @@
+src/virtio-net.c
+  24b6cf449f544e33 32
+.ci/check-format.sh
+  24b6cf449f544e33 5,9-17
+src/virtio-blk.c
+  24b6cf449f544e33 26
+src/serial.c
+  24b6cf449f544e33 67,249
+src/virtio-pci.c
+  24b6cf449f544e33 176
+.github/workflows/main.yml
+  24b6cf449f544e33 7,12,15,36,38,45,47-57
+src/arch/x86/vm.c
+  24b6cf449f544e33 72-76,161,166
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.4",
+  "base_commit_sha": "7c29f968f6be2023ead494a3adc19982e8f809aa",
+  "prompts": {
+    "24b6cf449f544e33": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "feed83eb-45dd-4822-a566-a2f1e5652a88",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": null,
+      "messages": [],
+      "total_additions": 126,
+      "total_deletions": 32,
+      "accepted_lines": 39,
+      "overriden_lines": 0
+    }
+  }
+}
