@@ -13,6 +13,7 @@ struct serial_dev {
     void *priv;
     pthread_t worker_tid;
     int infd; /* file descriptor for serial input */
+    int stopfd;
     struct dev dev;
     int irq_num;
 };

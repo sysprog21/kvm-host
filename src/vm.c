@@ -26,7 +26,7 @@ int vm_init(vm_t *v)
 
     v->mem = mmap(NULL, RAM_SIZE, PROT_READ | PROT_WRITE,
                   MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-    if (!v->mem)
+    if (v->mem == MAP_FAILED)
         return throw_err("Failed to mmap vm memory");
 
     struct kvm_userspace_memory_region region = {
@@ -58,13 +58,18 @@ int vm_load_image(vm_t *v, const char *image_path)
 {
     int fd = open(image_path, O_RDONLY);
     if (fd < 0)
-        return 1;
+        return throw_err("Failed to open %s", image_path);
 
     struct stat st;
-    fstat(fd, &st);
+    if (fstat(fd, &st) < 0) {
+        close(fd);
+        return throw_err("Failed to stat %s", image_path);
+    }
     size_t datasz = st.st_size;
     void *data = mmap(0, datasz, PROT_READ | PROT_WRITE, MAP_PRIVATE, fd, 0);
     close(fd);
+    if (data == MAP_FAILED)
+        return throw_err("Failed to mmap %s", image_path);
 
     int ret = vm_arch_load_image(v, data, datasz);
     munmap(data, datasz);
@@ -75,13 +80,18 @@ int vm_load_initrd(vm_t *v, const char *initrd_path)
 {
     int fd = open(initrd_path, O_RDONLY);
     if (fd < 0)
-        return 1;
+        return throw_err("Failed to open %s", initrd_path);
 
     struct stat st;
-    fstat(fd, &st);
+    if (fstat(fd, &st) < 0) {
+        close(fd);
+        return throw_err("Failed to stat %s", initrd_path);
+    }
     size_t datasz = st.st_size;
     void *data = mmap(0, datasz, PROT_READ | PROT_WRITE, MAP_PRIVATE, fd, 0);
     close(fd);
+    if (data == MAP_FAILED)
+        return throw_err("Failed to mmap %s", initrd_path);
 
     int ret = vm_arch_load_initrd(v, data, datasz);
     munmap(data, datasz);
@@ -92,17 +102,16 @@ int vm_load_diskimg(vm_t *v, const char *diskimg_file)
 {
     if (diskimg_init(&v->diskimg, diskimg_file) < 0)
         return -1;
-    virtio_blk_init_pci(&v->virtio_blk_dev, &v->diskimg, &v->pci, &v->io_bus,
-                        &v->mmio_bus);
-    return 0;
+    return virtio_blk_init_pci(&v->virtio_blk_dev, &v->diskimg, &v->pci,
+                               &v->io_bus, &v->mmio_bus);
 }
 
 int vm_enable_net(vm_t *v)
 {
     if (!virtio_net_init(&v->virtio_net_dev))
         return -1;
-    virtio_net_init_pci(&v->virtio_net_dev, &v->pci, &v->io_bus, &v->mmio_bus);
-    return 0;
+    return virtio_net_init_pci(&v->virtio_net_dev, &v->pci, &v->io_bus,
+                               &v->mmio_bus);
 }
 
 void vm_handle_io(vm_t *v, struct kvm_run *run)
@@ -126,8 +135,12 @@ void vm_handle_mmio(vm_t *v, struct kvm_run *run)
 int vm_run(vm_t *v)
 {
     int run_size = ioctl(v->kvm_fd, KVM_GET_VCPU_MMAP_SIZE, 0);
+    if (run_size < 0)
+        return throw_err("Failed to get VCPU mmap size");
     struct kvm_run *run =
         mmap(0, run_size, PROT_READ | PROT_WRITE, MAP_SHARED, v->vcpu_fd, 0);
+    if (run == MAP_FAILED)
+        return throw_err("Failed to mmap kvm_run");
 
     while (1) {
         int err = ioctl(v->vcpu_fd, KVM_RUN, 0);
@@ -158,7 +171,7 @@ int vm_run(vm_t *v)
 
 void *vm_guest_to_host(vm_t *v, uint64_t guest)
 {
-    if (guest < RAM_BASE)
+    if (guest < RAM_BASE || guest >= RAM_BASE + RAM_SIZE)
         return NULL;
     return (void *) ((uintptr_t) v->mem + guest - RAM_BASE);
 }
@@ -196,6 +209,7 @@ void vm_exit(vm_t *v)
 {
     serial_exit(&v->serial);
     virtio_blk_exit(&v->virtio_blk_dev);
+    virtio_net_exit(&v->virtio_net_dev);
     close(v->kvm_fd);
     close(v->vm_fd);
     close(v->vcpu_fd);

@@ -71,7 +71,7 @@ int main(int argc, char *argv[])
             break;
         case 'h':
             usage(argv[0]);
-            exit(123);
+            exit(0);
         default:
             break;
         }

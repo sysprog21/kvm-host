@@ -16,15 +16,18 @@ struct virtio_net_dev {
     int irqfd;
     int rx_ioeventfd;
     int tx_ioeventfd;
+    int stopfd;
     int irq_num;
     pthread_t rx_thread;
     pthread_t tx_thread;
+    bool rx_thread_started;
+    bool tx_thread_started;
     bool enable;
 };
 
 bool virtio_net_init(struct virtio_net_dev *virtio_net_dev);
 void virtio_net_exit(struct virtio_net_dev *virtio_net_dev);
-void virtio_net_init_pci(struct virtio_net_dev *virtio_net_dev,
-                         struct pci *pci,
-                         struct bus *io_bus,
-                         struct bus *mmio_bus);
+int virtio_net_init_pci(struct virtio_net_dev *virtio_net_dev,
+                        struct pci *pci,
+                        struct bus *io_bus,
+                        struct bus *mmio_bus);

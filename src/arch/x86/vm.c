@@ -160,7 +160,7 @@ int vm_arch_load_image(vm_t *v, void *data, size_t datasz)
     unsigned int idx = 0;
     boot->e820_table[idx++] = (struct boot_e820_entry) {
         .addr = 0x0,
-        .size = ISA_START_ADDRESS - 1,
+        .size = ISA_START_ADDRESS,
         .type = E820_RAM,
     };
     boot->e820_table[idx++] = (struct boot_e820_entry) {

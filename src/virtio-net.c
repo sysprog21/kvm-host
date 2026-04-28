@@ -24,30 +24,40 @@
 #define VIRTQ_TX 1
 #define NOTIFY_OFFSET 2
 
-static volatile bool thread_stop = false;
-
-static int virtio_net_virtq_available_rx(struct virtio_net_dev *dev,
-                                         int timeout)
+static bool virtio_net_stop_requested(struct virtio_net_dev *dev)
 {
     struct pollfd pollfd = (struct pollfd) {
-        .fd = dev->tapfd,
+        .fd = dev->stopfd,
         .events = POLLIN,
     };
-    return (poll(&pollfd, 1, timeout) > 0) && (pollfd.revents & POLLIN);
+    return poll(&pollfd, 1, 0) > 0 && (pollfd.revents & POLLIN);
 }
 
-static int virtio_net_virtq_available_tx(struct virtio_net_dev *dev,
-                                         int timeout)
+static bool virtio_net_poll_rx(struct virtio_net_dev *dev)
+{
+    struct pollfd pollfds[] = {
+        [0] = {.fd = dev->tapfd, .events = POLLIN},
+        [1] = {.fd = dev->stopfd, .events = POLLIN},
+    };
+
+    int ret = poll(pollfds, 2, -1);
+
+    return ret > 0 && (pollfds[0].revents & POLLIN) &&
+           !(pollfds[1].revents & POLLIN);
+}
+
+static bool virtio_net_poll_tx(struct virtio_net_dev *dev)
 {
     struct pollfd pollfds[] = {
         [0] = {.fd = dev->tx_ioeventfd, .events = POLLIN},
         [1] = {.fd = dev->tapfd, .events = POLLOUT},
+        [2] = {.fd = dev->stopfd, .events = POLLIN},
     };
 
-    int ret = poll(pollfds, 2, timeout);
+    int ret = poll(pollfds, 3, -1);
 
     return ret > 0 && (pollfds[0].revents & POLLIN) &&
-           (pollfds[1].revents & POLLOUT);
+           (pollfds[1].revents & POLLOUT) && !(pollfds[2].revents & POLLIN);
 }
 
 static void *virtio_net_vq_avail_handler_rx(void *arg)
@@ -55,9 +65,9 @@ static void *virtio_net_vq_avail_handler_rx(void *arg)
     struct virtq *vq = (struct virtq *) arg;
     struct virtio_net_dev *dev = (struct virtio_net_dev *) vq->dev;
 
-    while (!__atomic_load_n(&thread_stop, __ATOMIC_RELAXED)) {
+    while (!virtio_net_stop_requested(dev)) {
         vq->guest_event->flags = VRING_PACKED_EVENT_FLAG_ENABLE;
-        if (virtio_net_virtq_available_rx(dev, -1))
+        if (virtio_net_poll_rx(dev))
             virtq_handle_avail(vq);
     }
     return NULL;
@@ -68,9 +78,9 @@ static void *virtio_net_vq_avail_handler_tx(void *arg)
     struct virtq *vq = (struct virtq *) arg;
     struct virtio_net_dev *dev = (struct virtio_net_dev *) vq->dev;
 
-    while (!__atomic_load_n(&thread_stop, __ATOMIC_RELAXED)) {
+    while (!virtio_net_stop_requested(dev)) {
         vq->guest_event->flags = VRING_PACKED_EVENT_FLAG_ENABLE;
-        if (virtio_net_virtq_available_tx(dev, -1))
+        if (virtio_net_poll_tx(dev))
             virtq_handle_avail(vq);
     }
     return NULL;
@@ -92,8 +102,9 @@ static void virtio_net_enable_vq_rx(struct virtq *vq)
         v, vq->info.driver_addr);
     uint64_t addr = virtio_pci_get_notify_addr(&dev->virtio_pci_dev, vq);
     vm_ioeventfd_register(v, dev->rx_ioeventfd, addr, NOTIFY_OFFSET, 0);
-    pthread_create(&dev->rx_thread, NULL, virtio_net_vq_avail_handler_rx,
-                   (void *) vq);
+    if (pthread_create(&dev->rx_thread, NULL, virtio_net_vq_avail_handler_rx,
+                       (void *) vq) == 0)
+        dev->rx_thread_started = true;
 }
 
 static void virtio_net_enable_vq_tx(struct virtq *vq)
@@ -113,8 +124,9 @@ static void virtio_net_enable_vq_tx(struct virtq *vq)
 
     uint64_t addr = virtio_pci_get_notify_addr(&dev->virtio_pci_dev, vq);
     vm_ioeventfd_register(v, dev->tx_ioeventfd, addr, NOTIFY_OFFSET, 0);
-    pthread_create(&dev->tx_thread, NULL, virtio_net_vq_avail_handler_tx,
-                   (void *) vq);
+    if (pthread_create(&dev->tx_thread, NULL, virtio_net_vq_avail_handler_tx,
+                       (void *) vq) == 0)
+        dev->tx_thread_started = true;
 }
 
 static void virtio_net_notify_used_rx(struct virtq *vq)
@@ -234,30 +246,46 @@ bool virtio_net_init(struct virtio_net_dev *virtio_net_dev)
     return true;
 }
 
-static void virtio_net_setup(struct virtio_net_dev *dev)
+static int virtio_net_setup(struct virtio_net_dev *dev)
 {
     vm_t *v = container_of(dev, vm_t, virtio_net_dev);
 
-    dev->enable = true;
-    dev->irq_num = VIRTIO_NET_IRQ;
     dev->rx_ioeventfd = eventfd(0, EFD_CLOEXEC);
     dev->tx_ioeventfd = eventfd(0, EFD_CLOEXEC);
+    dev->stopfd = eventfd(0, EFD_CLOEXEC);
     dev->irqfd = eventfd(0, EFD_CLOEXEC);
+    if (dev->rx_ioeventfd < 0 || dev->tx_ioeventfd < 0 || dev->stopfd < 0 ||
+        dev->irqfd < 0) {
+        if (dev->rx_ioeventfd >= 0)
+            close(dev->rx_ioeventfd);
+        if (dev->tx_ioeventfd >= 0)
+            close(dev->tx_ioeventfd);
+        if (dev->stopfd >= 0)
+            close(dev->stopfd);
+        if (dev->irqfd >= 0)
+            close(dev->irqfd);
+        return throw_err("Failed to create virtio-net eventfds");
+    }
+
+    dev->enable = true;
+    dev->irq_num = VIRTIO_NET_IRQ;
     vm_irqfd_register(v, dev->irqfd, dev->irq_num, 0);
     for (int i = 0; i < VIRTIO_NET_VIRTQ_NUM; i++) {
         struct virtq_ops *ops = &virtio_net_ops[i];
         dev->vq[i].info.notify_off = i;
         virtq_init(&dev->vq[i], dev, ops);
     }
+    return 0;
 }
 
-void virtio_net_init_pci(struct virtio_net_dev *virtio_net_dev,
-                         struct pci *pci,
-                         struct bus *io_bus,
-                         struct bus *mmio_bus)
+int virtio_net_init_pci(struct virtio_net_dev *virtio_net_dev,
+                        struct pci *pci,
+                        struct bus *io_bus,
+                        struct bus *mmio_bus)
 {
     struct virtio_pci_dev *dev = &virtio_net_dev->virtio_pci_dev;
-    virtio_net_setup(virtio_net_dev);
+    if (virtio_net_setup(virtio_net_dev) < 0)
+        return -1;
     virtio_pci_init(dev, pci, io_bus, mmio_bus);
     virtio_pci_set_dev_cfg(dev, &virtio_net_dev->config,
                            sizeof(virtio_net_dev->config));
@@ -268,18 +296,25 @@ void virtio_net_init_pci(struct virtio_net_dev *virtio_net_dev,
 
     virtio_pci_add_feature(dev, VIRTIO_NET_F_MQ);
     virtio_pci_enable(dev);
+    return 0;
 }
 
 void virtio_net_exit(struct virtio_net_dev *dev)
 {
+    uint64_t n = 1;
+
     if (!dev->enable)
         return;
-    __atomic_store_n(&thread_stop, true, __ATOMIC_RELAXED);
-    pthread_join(dev->rx_thread, NULL);
-    pthread_join(dev->tx_thread, NULL);
+    if (dev->stopfd >= 0 && write(dev->stopfd, &n, sizeof(n)) < 0)
+        throw_err("Failed to wake virtio-net workers");
+    if (dev->rx_thread_started)
+        pthread_join(dev->rx_thread, NULL);
+    if (dev->tx_thread_started)
+        pthread_join(dev->tx_thread, NULL);
     virtio_pci_exit(&dev->virtio_pci_dev);
     close(dev->irqfd);
     close(dev->rx_ioeventfd);
     close(dev->tx_ioeventfd);
+    close(dev->stopfd);
     close(dev->tapfd);
 }
