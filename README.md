@@ -10,6 +10,13 @@ capable of running Linux kernel partially.
 
 ## Build and Run
 
+A working C toolchain plus the kernel build prerequisites (`flex`, `bison`, and
+the `libelf` development headers) are required. On Debian/Ubuntu:
+```shell
+$ sudo apt install -y flex bison libelf-dev
+```
+Other distributions provide equivalent packages.
+
 Fetch required submodules (only necessary for ARM build):
 ```shell
 git submodule update --init --recursive
@@ -33,14 +40,18 @@ make check
 
 ## Usage
 
+### Start Emulator
+
 ```
-build/kvm-host -k bzImage [-i initrd] [-d disk-image]
+$ build/kvm-host -k bzImage [-i initrd] [-d disk-image]
 ```
 
 `bzImage` is the path to linux kernel bzImage. The bzImage file is in a specific format,
 containing concatenated `bootsect.o + setup.o + misc.o + piggy.o`. `initrd` is the path to
 initial RAM disk image, which is an optional argument.
 `disk-image` is the path to disk image which can be mounted as a block device via virtio. For the reference Linux guest, ext4 filesystem is used for disk image.
+
+### Exit Emulator
 
 To exit kvm-host, press "Ctrl-A", release both keys, and then press "x".
 
