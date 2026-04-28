@@ -1,0 +1,23 @@
+configs/linux-arm64.config
+  59e54bbe68cd8d92 15,68-76
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.4",
+  "base_commit_sha": "7fe7da17b6762d73fa5240339c9966406f3d86aa",
+  "prompts": {
+    "59e54bbe68cd8d92": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "20f67f59-7de2-4c51-aafc-ab89fd6f39bf",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Jim Huang",
+      "messages": [],
+      "total_additions": 10,
+      "total_deletions": 1,
+      "accepted_lines": 70,
+      "overriden_lines": 0
+    }
+  }
+}
