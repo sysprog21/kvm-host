@@ -280,7 +280,8 @@ void virtio_pci_enable(struct virtio_pci_dev *dev)
     pci_dev_register(&dev->pci_dev);
 }
 
-void virtio_pci_exit()
+void virtio_pci_exit(struct virtio_pci_dev *dev)
 {
+    (void) dev;
     /* TODO: exit of the virtio pci device */
 }

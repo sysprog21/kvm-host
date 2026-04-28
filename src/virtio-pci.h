@@ -55,4 +55,4 @@ void virtio_pci_init(struct virtio_pci_dev *dev,
                      struct pci *pci,
                      struct bus *io_bus,
                      struct bus *mmio_bus);
-void virtio_pci_exit();
+void virtio_pci_exit(struct virtio_pci_dev *dev);

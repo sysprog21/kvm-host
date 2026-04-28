@@ -28,17 +28,18 @@ struct virtio_blk_dev {
     struct virtq vq[VIRTIO_BLK_VIRTQ_NUM];
     int irqfd;
     int ioeventfd;
+    int stopfd;
     int irq_num;
     pthread_t vq_avail_thread;
-    pthread_t worker_thread;
     struct diskimg *diskimg;
+    bool vq_thread_started;
     bool enable;
 };
 
 void virtio_blk_init(struct virtio_blk_dev *virtio_blk_dev);
 void virtio_blk_exit(struct virtio_blk_dev *dev);
-void virtio_blk_init_pci(struct virtio_blk_dev *dev,
-                         struct diskimg *diskimg,
-                         struct pci *pci,
-                         struct bus *io_bus,
-                         struct bus *mmio_bus);
+int virtio_blk_init_pci(struct virtio_blk_dev *dev,
+                        struct diskimg *diskimg,
+                        struct pci *pci,
+                        struct bus *io_bus,
+                        struct bus *mmio_bus);

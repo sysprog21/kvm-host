@@ -6,6 +6,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <sys/eventfd.h>
 #include <unistd.h>
 
 #include "err.h"
@@ -64,22 +65,23 @@ static void serial_update_irq(serial_dev_t *s)
 
 static int serial_readable(serial_dev_t *s, int timeout)
 {
-    struct pollfd pollfd = (struct pollfd) {
-        .fd = s->infd,
-        .events = POLLIN,
+    struct pollfd pollfds[] = {
+        [0] = {.fd = s->infd, .events = POLLIN},
+        [1] = {.fd = s->stopfd, .events = POLLIN},
     };
-    return (poll(&pollfd, 1, timeout) > 0) && (pollfd.revents & POLLIN);
-}
 
-/* global state to stop the loop of thread */
-static volatile bool thread_stop = false;
+    int ret = poll(pollfds, 2, timeout);
+
+    return ret > 0 && (pollfds[0].revents & POLLIN) &&
+           !(pollfds[1].revents & POLLIN);
+}
 
 static void *serial_thread(serial_dev_t *s)
 {
     struct serial_dev_priv *priv = (struct serial_dev_priv *) s->priv;
-    while (!__atomic_load_n(&thread_stop, __ATOMIC_RELAXED)) {
+    while (1) {
         if (!serial_readable(s, -1))
-            continue;
+            break;
         pthread_mutex_lock(&priv->lock);
         if (fifo_is_full(&priv->rx_buf)) {
             /* stdin is readable, but the rx_buf is full.
@@ -170,7 +172,7 @@ static void serial_in(serial_dev_t *s, uint16_t offset, void *data)
         break;
     case UART_LSR:
         value = __atomic_load_n(&priv->lsr, __ATOMIC_ACQUIRE);
-        IO_WRITE8(data, priv->lsr);
+        IO_WRITE8(data, value);
         break;
     case UART_MSR:
         IO_WRITE8(data, priv->msr);
@@ -249,8 +251,11 @@ int serial_init(serial_dev_t *s, struct bus *bus)
     *s = (serial_dev_t) {
         .priv = (void *) &serial_dev_priv,
         .infd = STDIN_FILENO,
+        .stopfd = eventfd(0, EFD_CLOEXEC),
         .irq_num = SERIAL_IRQ,
     };
+    if (s->stopfd < 0)
+        return throw_err("Failed to create serial stop eventfd");
     pthread_create(&s->worker_tid, NULL, (void *) serial_thread, (void *) s);
 
     dev_init(&s->dev, COM1_PORT_BASE, COM1_PORT_SIZE, s, serial_handle_io);
@@ -261,6 +266,15 @@ int serial_init(serial_dev_t *s, struct bus *bus)
 
 void serial_exit(serial_dev_t *s)
 {
-    __atomic_store_n(&thread_stop, true, __ATOMIC_RELAXED);
+    struct serial_dev_priv *priv = (struct serial_dev_priv *) s->priv;
+    uint64_t n = 1;
+
+    if (s->stopfd >= 0 && write(s->stopfd, &n, sizeof(n)) < 0)
+        throw_err("Failed to wake serial worker");
+    /* Worker may be parked in pthread_cond_wait when the rx FIFO is full;
+     * stopfd POLLIN alone won't wake it. Broadcast so it returns to the top
+     * of its loop and observes stopfd. */
+    pthread_cond_broadcast(&priv->cond);
     pthread_join(s->worker_tid, NULL);
+    close(s->stopfd);
 }

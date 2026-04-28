@@ -1,6 +1,5 @@
 #include <fcntl.h>
 #include <poll.h>
-#include <signal.h>
 #include <stddef.h>
 #include <stdlib.h>
 #include <string.h>
@@ -23,23 +22,15 @@ static void virtio_blk_notify_used(struct virtq *vq)
 
 static int virtio_blk_virtq_available(struct virtio_blk_dev *dev, int timeout)
 {
-    struct pollfd pollfd = (struct pollfd) {
-        .fd = dev->ioeventfd,
-        .events = POLLIN,
+    struct pollfd pollfds[] = {
+        [0] = {.fd = dev->ioeventfd, .events = POLLIN},
+        [1] = {.fd = dev->stopfd, .events = POLLIN},
     };
-    return (poll(&pollfd, 1, timeout) > 0) && (pollfd.revents & POLLIN);
-}
 
-static volatile bool thread_stop = false;
+    int ret = poll(pollfds, 2, timeout);
 
-static void *virtio_blk_thread(struct virtio_blk_dev *dev)
-{
-    while (!__atomic_load_n(&thread_stop, __ATOMIC_RELAXED)) {
-        if (virtio_blk_virtq_available(dev, -1))
-            pthread_kill((pthread_t) dev->vq_avail_thread, SIGUSR1);
-    }
-
-    return NULL;
+    return ret > 0 && (pollfds[0].revents & POLLIN) &&
+           !(pollfds[1].revents & POLLIN);
 }
 
 static void *virtio_blk_vq_avail_handler(void *arg)
@@ -48,7 +39,9 @@ static void *virtio_blk_vq_avail_handler(void *arg)
     struct virtio_blk_dev *dev = (struct virtio_blk_dev *) vq->dev;
     uint64_t n;
 
-    while (read(dev->ioeventfd, &n, sizeof(n))) {
+    while (virtio_blk_virtq_available(dev, -1)) {
+        if (read(dev->ioeventfd, &n, sizeof(n)) < 0)
+            continue;
         virtq_handle_avail(vq);
     }
     return NULL;
@@ -72,8 +65,9 @@ static void virtio_blk_enable_vq(struct virtq *vq)
     uint64_t addr = virtio_pci_get_notify_addr(&dev->virtio_pci_dev, vq);
     vm_ioeventfd_register(v, dev->ioeventfd, addr,
                           dev->virtio_pci_dev.notify_cap->cap.length, 0);
-    pthread_create(&dev->vq_avail_thread, NULL, virtio_blk_vq_avail_handler,
-                   (void *) vq);
+    if (pthread_create(&dev->vq_avail_thread, NULL, virtio_blk_vq_avail_handler,
+                       (void *) vq) == 0)
+        dev->vq_thread_started = true;
 }
 
 static ssize_t virtio_blk_write(struct virtio_blk_dev *dev,
@@ -100,27 +94,36 @@ static void virtio_blk_complete_request(struct virtq *vq)
     struct vring_packed_desc *desc;
     struct virtio_blk_req req;
 
+    /* Wire-format header is type/reserved/sector only; the rest of struct
+     * virtio_blk_req is host bookkeeping and must not be overwritten by the
+     * guest. */
+    const size_t hdr_sz = offsetof(struct virtio_blk_req, data);
+
     while ((desc = virtq_get_avail(vq))) {
         struct vring_packed_desc *used_desc = desc;
-        int r = 0;
+        ssize_t io_bytes = 0;
 
-        memcpy(&req, vm_guest_to_host(v, desc->addr), desc->len);
+        void *hdr = vm_guest_to_host(v, desc->addr);
+        if (!hdr || desc->len < hdr_sz)
+            return;
+        memcpy(&req, hdr, hdr_sz);
         if (req.type == VIRTIO_BLK_T_IN || req.type == VIRTIO_BLK_T_OUT) {
             if (!virtq_check_next(desc))
                 return;
             desc = virtq_get_avail(vq);
             req.data_size = desc->len;
             req.data = vm_guest_to_host(v, desc->addr);
+            if (!req.data)
+                return;
 
-            ssize_t r;
             if (req.type == VIRTIO_BLK_T_IN)
-                r = virtio_blk_read(dev, req.data, req.sector << 9,
-                                    req.data_size);
+                io_bytes = virtio_blk_read(dev, req.data, req.sector << 9,
+                                           req.data_size);
             else
-                r = virtio_blk_write(dev, req.data, req.sector << 9,
-                                     req.data_size);
+                io_bytes = virtio_blk_write(dev, req.data, req.sector << 9,
+                                            req.data_size);
 
-            status = r < 0 ? VIRTIO_BLK_S_IOERR : VIRTIO_BLK_S_OK;
+            status = io_bytes < 0 ? VIRTIO_BLK_S_IOERR : VIRTIO_BLK_S_OK;
         } else {
             status = VIRTIO_BLK_S_UNSUPP;
         }
@@ -128,9 +131,17 @@ static void virtio_blk_complete_request(struct virtq *vq)
             return;
         desc = virtq_get_avail(vq);
         req.status = vm_guest_to_host(v, desc->addr);
+        if (!req.status)
+            return;
         *req.status = status;
+        /* used.len is total bytes the device wrote into device-writable
+         * buffers across the chain: the 1-byte status is always written, plus
+         * io_bytes of data on a successful IN. */
+        size_t written = 1;
+        if (req.type == VIRTIO_BLK_T_IN && io_bytes > 0)
+            written += (size_t) io_bytes;
+        used_desc->len = (uint32_t) written;
         used_desc->flags ^= (1ULL << VRING_PACKED_DESC_F_USED);
-        used_desc->len = r;
         dev->virtio_pci_dev.config.isr_cap.isr_status |= VIRTIO_PCI_ISR_QUEUE;
     }
 }
@@ -141,32 +152,44 @@ static struct virtq_ops ops = {
     .notify_used = virtio_blk_notify_used,
 };
 
-static void virtio_blk_setup(struct virtio_blk_dev *dev,
-                             struct diskimg *diskimg)
+static int virtio_blk_setup(struct virtio_blk_dev *dev, struct diskimg *diskimg)
 {
     vm_t *v = container_of(dev, vm_t, virtio_blk_dev);
+
+    dev->ioeventfd = eventfd(0, EFD_CLOEXEC);
+    dev->stopfd = eventfd(0, EFD_CLOEXEC);
+    dev->irqfd = eventfd(0, EFD_CLOEXEC);
+    if (dev->ioeventfd < 0 || dev->stopfd < 0 || dev->irqfd < 0) {
+        if (dev->ioeventfd >= 0)
+            close(dev->ioeventfd);
+        if (dev->stopfd >= 0)
+            close(dev->stopfd);
+        if (dev->irqfd >= 0)
+            close(dev->irqfd);
+        return throw_err("Failed to create virtio-blk eventfds");
+    }
 
     dev->enable = true;
     /* FIXME: irq_num should be different to other devs */
     dev->irq_num = VIRTIO_BLK_IRQ;
     dev->diskimg = diskimg;
     dev->config.capacity = diskimg->size >> 9;
-    dev->ioeventfd = eventfd(0, EFD_CLOEXEC);
-    dev->irqfd = eventfd(0, EFD_CLOEXEC);
     vm_irqfd_register(v, dev->irqfd, dev->irq_num, 0);
     for (int i = 0; i < VIRTIO_BLK_VIRTQ_NUM; i++)
         virtq_init(&dev->vq[i], dev, &ops);
+    return 0;
 }
 
-void virtio_blk_init_pci(struct virtio_blk_dev *virtio_blk_dev,
-                         struct diskimg *diskimg,
-                         struct pci *pci,
-                         struct bus *io_bus,
-                         struct bus *mmio_bus)
+int virtio_blk_init_pci(struct virtio_blk_dev *virtio_blk_dev,
+                        struct diskimg *diskimg,
+                        struct pci *pci,
+                        struct bus *io_bus,
+                        struct bus *mmio_bus)
 {
     struct virtio_pci_dev *dev = &virtio_blk_dev->virtio_pci_dev;
     /* Initialize the device based on PCI */
-    virtio_blk_setup(virtio_blk_dev, diskimg);
+    if (virtio_blk_setup(virtio_blk_dev, diskimg) < 0)
+        return -1;
     virtio_pci_init(dev, pci, io_bus, mmio_bus);
     virtio_pci_set_dev_cfg(dev, &virtio_blk_dev->config,
                            sizeof(virtio_blk_dev->config));
@@ -175,8 +198,7 @@ void virtio_blk_init_pci(struct virtio_blk_dev *virtio_blk_dev,
     virtio_pci_set_virtq(dev, virtio_blk_dev->vq, VIRTIO_BLK_VIRTQ_NUM);
     virtio_pci_add_feature(dev, 0);
     virtio_pci_enable(dev);
-    pthread_create(&virtio_blk_dev->worker_thread, NULL,
-                   (void *) virtio_blk_thread, (void *) virtio_blk_dev);
+    return 0;
 }
 
 void virtio_blk_init(struct virtio_blk_dev *dev)
@@ -186,12 +208,17 @@ void virtio_blk_init(struct virtio_blk_dev *dev)
 
 void virtio_blk_exit(struct virtio_blk_dev *dev)
 {
+    uint64_t n = 1;
+
     if (!dev->enable)
         return;
-    __atomic_store_n(&thread_stop, true, __ATOMIC_RELAXED);
-    pthread_join(dev->vq_avail_thread, NULL);
+    if (dev->stopfd >= 0 && write(dev->stopfd, &n, sizeof(n)) < 0)
+        throw_err("Failed to wake virtio-blk worker");
+    if (dev->vq_thread_started)
+        pthread_join(dev->vq_avail_thread, NULL);
     diskimg_exit(dev->diskimg);
     virtio_pci_exit(&dev->virtio_pci_dev);
     close(dev->irqfd);
     close(dev->ioeventfd);
+    close(dev->stopfd);
 }
