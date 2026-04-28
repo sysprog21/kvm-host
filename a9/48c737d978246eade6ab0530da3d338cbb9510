@@ -1,0 +1,25 @@
+src/arch/arm64/vm.c
+  59e54bbe68cd8d92 379-381,385-386,395-414
+src/arch/arm64/desc.h
+  59e54bbe68cd8d92 4-8,11
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.4",
+  "base_commit_sha": "a948c737d978246eade6ab0530da3d338cbb9510",
+  "prompts": {
+    "59e54bbe68cd8d92": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "20f67f59-7de2-4c51-aafc-ab89fd6f39bf",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Jim Huang",
+      "messages": [],
+      "total_additions": 31,
+      "total_deletions": 12,
+      "accepted_lines": 31,
+      "overriden_lines": 0
+    }
+  }
+}
