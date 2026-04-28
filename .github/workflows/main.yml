@@ -2,6 +2,13 @@ name: CI
 
 on: [push, pull_request]
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
 jobs:
   detect-code-related-file-changes:
     runs-on: ubuntu-24.04
@@ -19,6 +26,9 @@ jobs:
               mk/**
               src/**
               target/**
+              configs/**
+              scripts/**
+              .github/workflows/**
               .clang-format
               Makefile
       - name: Set has_code_related_changes
@@ -30,33 +40,170 @@ jobs:
             echo "has_code_related_changes=false" >> $GITHUB_OUTPUT
           fi
 
+  # PR-only: rebuild bzImage/rootfs.cpio from source when local kernel
+  # and rootfs inputs have drifted from the prebuilt's recorded inputs.
+  # Without this, a PR that touches configs, target/, or mk/external.mk
+  # would silently exercise the stale prebuilt instead of the
+  # contributor's actual change.
+  #
+  # Artifacts are published as a workflow artifact (reliable cross-job
+  # handoff) and consumed by the test job below. They are NOT published
+  # to the prebuilt GitHub release; that path is owned by
+  # .github/workflows/prebuilt.yml on master push.
+  pr-prebuilt-build:
+    runs-on: ubuntu-24.04
+    outputs:
+      should_build: ${{ steps.detect.outputs.should_build }}
+    steps:
+      - uses: actions/checkout@v6
+      - name: detect input drift
+        id: detect
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" != "pull_request" ]; then
+            echo "should_build=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # Strip CR + trailing whitespace so a value pasted from a Mac
+          # editor or with stray spaces doesn't trigger perpetual drift.
+          expected=$(sed -n 's/^PREBUILT_INPUTS_SHA1[[:space:]]*=[[:space:]]*//p' mk/external.mk \
+              | head -1 | tr -d '\r' | sed 's/[[:space:]]*$//')
+          live=$(.ci/inputs-hash.sh)
+          if [ -z "$expected" ]; then
+            echo "Prebuilt not yet pinned in mk/external.mk; rebuilding from source"
+            echo "should_build=true" >> "$GITHUB_OUTPUT"
+          elif [ "$live" = "$expected" ]; then
+            echo "PR inputs match the prebuilt ($live); skipping rebuild"
+            echo "should_build=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "PR inputs drifted ($live != $expected); will rebuild from source"
+            echo "should_build=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: install build dependencies
+        if: steps.detect.outputs.should_build == 'true'
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
+            build-essential bc bison flex cpio libssl-dev libelf-dev \
+            wget curl python3
+        timeout-minutes: 5
+      - name: build kernel and rootfs from source
+        if: steps.detect.outputs.should_build == 'true'
+        run: ./scripts/build-image.sh --all
+        timeout-minutes: 60
+      # Pre-create stamp files matching the SHA1 pins still in mk/external.mk
+      # so that when host-x64's `make` evaluates the prebuilt branch, it
+      # sees both image and stamp present and skips the redownload that
+      # would otherwise clobber our freshly-built artifacts with the OLD
+      # release content. Bootstrap PRs (no pin yet) skip this step, which
+      # is correct -- the source-build branch has no stamp dependency.
+      - name: stage prebuilt stamps to suppress redownload
+        if: steps.detect.outputs.should_build == 'true'
+        shell: bash
+        run: |
+          extract() {
+            sed -n "s/^$1[[:space:]]*=[[:space:]]*//p" mk/external.mk \
+              | head -1 | tr -d '\r' | sed 's/[[:space:]]*$//'
+          }
+          kernel_pin=$(extract KERNEL_DATA_SHA1)
+          initrd_pin=$(extract INITRD_DATA_SHA1)
+          mkdir -p build
+          [ -n "$kernel_pin" ] && touch "build/.prebuilt-kernel-$kernel_pin.stamp"
+          [ -n "$initrd_pin" ] && touch "build/.prebuilt-initrd-$initrd_pin.stamp"
+          # Touch images last so make sees them no older than the stamps.
+          touch build/bzImage build/rootfs.cpio
+          ls -la build/
+      - name: upload PR-built artifacts
+        if: steps.detect.outputs.should_build == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: prebuilt-pr
+          path: |
+            build/bzImage
+            build/rootfs.cpio
+            build/.prebuilt-*.stamp
+          retention-days: 1
+          if-no-files-found: error
+
   host-x64:
-    needs: [detect-code-related-file-changes]
+    needs: [detect-code-related-file-changes, pr-prebuilt-build]
     if: needs.detect-code-related-file-changes.outputs.has_code_related_changes == 'true'
     runs-on: ubuntu-24.04
     steps:
-    - uses: actions/checkout@v6
-    - name: default build
-      run: make
+      - uses: actions/checkout@v6
+      # Drift PR: pull the freshly-built bzImage/rootfs.cpio from
+      # pr-prebuilt-build via workflow artifact. No `path:` because
+      # upload-artifact already records each file with its `build/`
+      # prefix; specifying `path: build/` here would produce build/build/.
+      - name: download PR-built kernel/rootfs
+        if: needs.pr-prebuilt-build.outputs.should_build == 'true'
+        uses: actions/download-artifact@v8
+        with:
+          name: prebuilt-pr
+      # Non-drift PR or master push: cache the release-downloaded (or
+      # source-built, on the bootstrap pass before the first prerelease)
+      # artifacts across runs. mk/external.mk participates in the key so
+      # checksum or input-pin bumps invalidate the old pair.
+      - name: cache external downloads
+        if: needs.pr-prebuilt-build.outputs.should_build != 'true'
+        uses: actions/cache@v5
+        with:
+          # Stamps must travel with the images: cache hit without the
+          # matching stamp would trip the prebuilt branch's freshness
+          # check and trigger an unnecessary redownload.
+          path: |
+            build/bzImage
+            build/rootfs.cpio
+            build/.prebuilt-kernel-*.stamp
+            build/.prebuilt-initrd-*.stamp
+          key: external-${{ hashFiles('mk/external.mk', 'configs/linux-x86.config', 'configs/busybox.config', 'target/**') }}
+      - name: install build and test dependencies
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
+            build-essential bc bison flex cpio libssl-dev libelf-dev \
+            wget curl python3 e2fsprogs expect
+        timeout-minutes: 5
+      - name: ensure /dev/kvm available
+        run: |
+          if [ ! -e /dev/kvm ]; then
+            echo "::error::/dev/kvm missing on this runner"
+            exit 1
+          fi
+          ls -l /dev/kvm
+          sudo chmod 666 /dev/kvm || true
+      - name: default build
+        run: make
+        timeout-minutes: 5
+      # Materialize bzImage, rootfs.cpio, and ext4.img up front so the boot
+      # test's expect timeout window only has to cover the actual guest
+      # boot (~30 s) -- not a 15-minute fresh kernel source build that
+      # happens on the bootstrap pass before any prebuilt or cache exists.
+      - name: build kernel and rootfs images
+        run: make build/bzImage build/rootfs.cpio build/ext4.img
+        timeout-minutes: 30
+      - name: boot test
+        run: .ci/autorun.sh
+        timeout-minutes: 5
 
   coding-style:
     needs: [detect-code-related-file-changes]
     if: needs.detect-code-related-file-changes.outputs.has_code_related_changes == 'true'
     runs-on: ubuntu-24.04
     steps:
-    - uses: actions/checkout@v6
-    - name: Install clang-format-20
-      run: |
-            sudo install -m 0755 -d /etc/apt/keyrings
-            wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key \
-                | sudo gpg --dearmor -o /etc/apt/keyrings/llvm.gpg
-            echo "deb [signed-by=/etc/apt/keyrings/llvm.gpg] http://apt.llvm.org/noble/ llvm-toolchain-noble-20 main" \
-                | sudo tee /etc/apt/sources.list.d/llvm.list
-            sudo apt-get update
-            sudo apt-get install -q -y clang-format-20
-      shell: bash
-    - name: coding convention
-      run: |
-            .ci/check-newline.sh
-            .ci/check-format.sh
-      shell: bash
+      - uses: actions/checkout@v6
+      - name: Install clang-format-20
+        run: |
+          sudo install -m 0755 -d /etc/apt/keyrings
+          wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key \
+              | sudo gpg --dearmor -o /etc/apt/keyrings/llvm.gpg
+          echo "deb [signed-by=/etc/apt/keyrings/llvm.gpg] http://apt.llvm.org/noble/ llvm-toolchain-noble-20 main" \
+              | sudo tee /etc/apt/sources.list.d/llvm.list
+          sudo apt-get update
+          sudo apt-get install -q -y clang-format-20
+        shell: bash
+      - name: coding convention
+        run: |
+          .ci/check-newline.sh
+          .ci/check-format.sh
+        shell: bash
