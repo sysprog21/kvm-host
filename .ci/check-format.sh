@@ -1,17 +1,16 @@
 #!/usr/bin/env bash
 
-set -e -u -o pipefail
+set -euo pipefail
 
 cd "$(git rev-parse --show-toplevel)"
 
-set -x
+# clang-format-20 -n --Werror exits non-zero on the first violation, which
+# is exactly what we want from CI. Drops the temp-file + diff loop the old
+# script used (which also wrapped exit codes >255).
+sources=()
+while IFS= read -r f; do
+    sources+=("$f")
+done < <(git ls-files '*.c' '*.cxx' '*.cpp' '*.h' '*.hpp' \
+         | grep -v '^src/dtc/')
 
-while IFS= read -r -d '' file; do
-    clang-format-20 "$file" > expected-format
-    diff -u -p --label="$file" --label="expected coding style" "$file" expected-format
-done < <(git ls-files -z '*.c' '*.cxx' '*.cpp' '*.h' '*.hpp')
-
-count=$(git ls-files -z '*.c' '*.cxx' '*.cpp' '*.h' '*.hpp' \
-    | xargs -0 clang-format-20 --output-replacements-xml \
-    | grep -c "</replacement>" || true)
-exit "$count"
+clang-format-20 -n --Werror "${sources[@]}"
