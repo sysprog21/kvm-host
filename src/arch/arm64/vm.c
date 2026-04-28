@@ -142,6 +142,13 @@ int vm_arch_init_platform_device(vm_t *v)
     if (serial_init(&v->serial, &v->io_bus))
         return throw_err("Failed to init UART device");
 
+    /* Zero virtio_blk_dev so pci_dev_is_registered() observes a clean
+     * state when the user boots without -d. virtio_net_init memsets
+     * inside vm_enable_net, so virtio_net_dev is covered by that path.
+     * x86 already does the same call in its vm_arch_init_platform_device.
+     */
+    virtio_blk_init(&v->virtio_blk_dev);
+
     if (finalize_irqchip(v) < 0)
         return -1;
 
@@ -216,6 +223,11 @@ static int get_mpidr(vm_t *v, uint64_t *mpidr)
 
     *mpidr &= ARM_MPIDR_BITMASK;
     return 0;
+}
+
+static bool pci_dev_is_registered(struct pci_dev *dev)
+{
+    return dev->config_dev.len == PCI_CFG_SPACE_SIZE;
 }
 
 /* The phandle of interrupt controller */
@@ -376,12 +388,14 @@ static int generate_fdt(vm_t *v)
          cpu_to_fdt64(ARM_PCI_MMIO_BASE), cpu_to_fdt64(ARM_PCI_MMIO_SIZE)},
     };
     __FDT(property, "ranges", &pci_ranges, sizeof(pci_ranges));
-    /* interrupt-map contains the interrupt mapping between the PCI device and
-     * the IRQ number of interrupt controller.
-     * virtio-blk is the only PCI device.
+    /* interrupt-map routes each PCI device's INTA# to a GIC SPI so the
+     * guest can wire up MSI-less virtio devices. One entry per emulated
+     * PCI function.
      */
     struct virtio_blk_dev *virtio_blk = &v->virtio_blk_dev;
     struct pci_dev *virtio_blk_pci = (struct pci_dev *) virtio_blk;
+    struct virtio_net_dev *virtio_net = &v->virtio_net_dev;
+    struct pci_dev *virtio_net_pci = (struct pci_dev *) virtio_net;
     struct {
         uint32_t pci_hi;
         uint64_t pci_addr;
@@ -390,16 +404,35 @@ static int generate_fdt(vm_t *v)
         uint32_t gic_type;
         uint32_t gic_irqn;
         uint32_t gic_irq_type;
-    } __attribute__((packed)) pci_irq_map[] = {{
-        cpu_to_fdt32(virtio_blk_pci->config_dev.base & ~(1UL << 31)),
-        0,
-        cpu_to_fdt32(1),
-        cpu_to_fdt32(FDT_PHANDLE_GIC),
-        cpu_to_fdt32(ARM_FDT_IRQ_TYPE_SPI),
-        cpu_to_fdt32(VIRTIO_BLK_IRQ),
-        cpu_to_fdt32(ARM_FDT_IRQ_EDGE_TRIGGER),
-    }};
-    __FDT(property, "interrupt-map", &pci_irq_map, sizeof(pci_irq_map));
+    } __attribute__((packed)) pci_irq_map[2];
+    size_t pci_irq_map_len = 0;
+
+    if (pci_dev_is_registered(virtio_blk_pci)) {
+        pci_irq_map[pci_irq_map_len++] = (__typeof__(pci_irq_map[0])) {
+            cpu_to_fdt32(virtio_blk_pci->config_dev.base & ~(1UL << 31)),
+            0,
+            cpu_to_fdt32(1),
+            cpu_to_fdt32(FDT_PHANDLE_GIC),
+            cpu_to_fdt32(ARM_FDT_IRQ_TYPE_SPI),
+            cpu_to_fdt32(VIRTIO_BLK_IRQ),
+            cpu_to_fdt32(ARM_FDT_IRQ_EDGE_TRIGGER),
+        };
+    }
+    if (pci_dev_is_registered(virtio_net_pci)) {
+        pci_irq_map[pci_irq_map_len++] = (__typeof__(pci_irq_map[0])) {
+            cpu_to_fdt32(virtio_net_pci->config_dev.base & ~(1UL << 31)),
+            0,
+            cpu_to_fdt32(1),
+            cpu_to_fdt32(FDT_PHANDLE_GIC),
+            cpu_to_fdt32(ARM_FDT_IRQ_TYPE_SPI),
+            cpu_to_fdt32(VIRTIO_NET_IRQ),
+            cpu_to_fdt32(ARM_FDT_IRQ_EDGE_TRIGGER),
+        };
+    }
+    if (pci_irq_map_len > 0) {
+        __FDT(property, "interrupt-map", &pci_irq_map,
+              pci_irq_map_len * sizeof(pci_irq_map[0]));
+    }
     __FDT(end_node); /* End of /pci node */
 
     /* Finalize the device tree */
