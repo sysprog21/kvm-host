@@ -186,6 +186,44 @@ jobs:
         run: .ci/autorun.sh
         timeout-minutes: 5
 
+  # arm64 host build: configs/linux-arm64.config has no prebuilt path and
+  # the GitHub-hosted ubuntu-24.04-arm runners (Cobalt 100) do NOT expose
+  # /dev/kvm, so we only exercise compile and image-build coverage --
+  # enough to catch arch/arm64 compile breaks, libfdt link issues, and
+  # arm64 kernel config drift. The runtime boot smoke test stays gated to
+  # host-x64 until a self-hosted arm64 runner with bare-metal /dev/kvm is
+  # available.
+  host-arm64:
+    needs: [detect-code-related-file-changes]
+    if: needs.detect-code-related-file-changes.outputs.has_code_related_changes == 'true'
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          # libfdt lives at src/dtc and is required for the arm64 device
+          # tree generated in src/arch/arm64/vm.c.
+          submodules: recursive
+      - name: cache external downloads
+        uses: actions/cache@v5
+        with:
+          path: |
+            build/Image
+            build/rootfs.cpio
+          key: external-arm64-${{ hashFiles('mk/external.mk', 'configs/linux-arm64.config', 'configs/busybox.config', 'target/**') }}
+      - name: install build dependencies
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
+            build-essential bc bison flex cpio libssl-dev libelf-dev \
+            wget curl python3
+        timeout-minutes: 5
+      - name: default build
+        run: make
+        timeout-minutes: 5
+      - name: build kernel and rootfs images
+        run: make build/Image build/rootfs.cpio
+        timeout-minutes: 30
+
   coding-style:
     needs: [detect-code-related-file-changes]
     if: needs.detect-code-related-file-changes.outputs.has_code_related_changes == 'true'
