@@ -1,0 +1,29 @@
+src/virtio-blk.c
+  fdf9c065f32c830a 165-174
+src/virtq.c
+  fdf9c065f32c830a 47,51,66-71
+src/virtio-net.c
+  fdf9c065f32c830a 179-187,222-229
+src/virtio-pci.c
+  fdf9c065f32c830a 142-151
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.4",
+  "base_commit_sha": "4b26e80d621361fda57b5894894dd42a9aaedf5b",
+  "prompts": {
+    "fdf9c065f32c830a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "77edccb9-d3d1-4b5d-af31-208aaa818fe1",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Jim Huang",
+      "messages": [],
+      "total_additions": 62,
+      "total_deletions": 26,
+      "accepted_lines": 45,
+      "overriden_lines": 0
+    }
+  }
+}
