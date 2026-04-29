@@ -13,12 +13,16 @@
 #define VIRTIO_BLK_VIRTQ_NUM 1
 #define VIRTIO_BLK_PCI_CLASS 0x018000
 
+/* Wire-format header is the first three fields (type/reserved/sector); the
+ * trailing host-only bookkeeping is filled in by the device emulator from the
+ * descriptor chain and never read from guest memory.
+ */
 struct virtio_blk_req {
     uint32_t type;
     uint32_t reserved;
     uint64_t sector;
     uint8_t *data;
-    uint16_t data_size;
+    uint32_t data_size;
     uint8_t *status;
 };
 

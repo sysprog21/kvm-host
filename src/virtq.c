@@ -21,7 +21,6 @@ void virtq_enable(struct virtq *vq)
 
 void virtq_disable(struct virtq *vq) {}
 
-#define VIRTQ_SIZE 128
 void virtq_init(struct virtq *vq, void *dev, struct virtq_ops *ops)
 {
     vq->info.size = VIRTQ_SIZE;
@@ -56,6 +55,28 @@ struct vring_packed_desc *virtq_get_avail(struct virtq *vq)
         vq->used_wrap_count ^= 1;
     }
     return desc;
+}
+
+void virtq_publish_used(struct vring_packed_desc *head,
+                        uint16_t id,
+                        uint32_t len)
+{
+    /* Buffer ID belongs in the head/used slot in packed virtqueues; the
+     * driver uses it to match the completion to its in-flight request. The
+     * len update must be visible before the USED flag flip, so write id and
+     * len with relaxed stores and then use a release-store on flags. */
+    head->id = id;
+    head->len = len;
+    uint16_t flags = head->flags ^ (uint16_t) (1U << VRING_PACKED_DESC_F_USED);
+    __atomic_store_n(&head->flags, flags, __ATOMIC_RELEASE);
+}
+
+void virtq_set_guest_event_flags(struct virtq *vq, uint16_t value)
+{
+    /* The consumer side reads guest_event->flags with __ATOMIC_ACQUIRE in
+     * virtq_handle_avail; pair with a release-store so completion writes
+     * land before the suppression-flag transition is visible. */
+    __atomic_store_n(&vq->guest_event->flags, value, __ATOMIC_RELEASE);
 }
 
 void virtq_handle_avail(struct virtq *vq)

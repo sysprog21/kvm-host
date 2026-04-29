@@ -22,6 +22,11 @@ ssize_t diskimg_write(struct diskimg *diskimg,
     return write(diskimg->fd, data, size);
 }
 
+int diskimg_flush(struct diskimg *diskimg)
+{
+    return fdatasync(diskimg->fd);
+}
+
 int diskimg_init(struct diskimg *diskimg, const char *file_path)
 {
     diskimg->fd = open(file_path, O_RDWR);

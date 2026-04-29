@@ -114,10 +114,18 @@ static void virtio_pci_space_write(struct virtio_pci_dev *dev,
                 offset <= VIRTIO_PCI_COMMON_Q_USEDHI) {
                 uint16_t select = dev->config.common_cfg.queue_select;
                 uint64_t info_offset = offset - VIRTIO_PCI_COMMON_Q_SIZE;
-                if (select < dev->config.common_cfg.num_queues)
+                if (select < dev->config.common_cfg.num_queues) {
                     memcpy((void *) ((uintptr_t) &dev->vq[select].info +
                                      info_offset),
                            data, size);
+                    /* Clamp guest-supplied queue_size to what we advertised
+                     * (VIRTQ_SIZE). Without this, a guest writing a larger
+                     * avalue would let chain walks blow past the
+                     * VIRTQ_SIZE-sized stack arrays in the device emulators.
+                     */
+                    if (dev->vq[select].info.size > VIRTQ_SIZE)
+                        dev->vq[select].info.size = VIRTQ_SIZE;
+                }
             }
             /* guest notify buffer avail */
             else if (offset ==
@@ -141,9 +149,10 @@ static void virtio_pci_space_read(struct virtio_pci_dev *dev,
     if (offset < offsetof(struct virtio_pci_config, dev_cfg)) {
         if (offset == offsetof(struct virtio_pci_config, isr_cap) &&
             size <= sizeof(dev->config.isr_cap.isr_status)) {
-            /* Read-and-clear in one atomic step so a worker thread's
-             * concurrent fetch_or on isr_status cannot be lost between the
-             * load and the zero-back. Acquire pairs with workers' release. */
+            /* Read-and-clear in one atomic step so a worker thread's concurrent
+             * fetch_or on isr_status cannot be lost between the load and the
+             * zero-back. Acquire pairs with workers' release.
+             */
             uint32_t status = __atomic_exchange_n(
                 &dev->config.isr_cap.isr_status, 0, __ATOMIC_ACQUIRE);
             memcpy(data, &status, size);
@@ -208,7 +217,8 @@ static void virtio_pci_set_cap(struct virtio_pci_dev *dev, uint8_t next)
     caps[VIRTIO_PCI_CAP_ISR_CFG]->length = sizeof(struct virtio_pci_isr_cap);
 
     /* FIXME: The offset for the dev-specific configuration MUST be 4-byte
-     * aligned */
+     * aligned
+     */
     caps[VIRTIO_PCI_CAP_DEVICE_CFG]->offset =
         offsetof(struct virtio_pci_config, dev_cfg);
     caps[VIRTIO_PCI_CAP_DEVICE_CFG]->length = 0;
