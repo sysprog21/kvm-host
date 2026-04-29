@@ -1,0 +1,27 @@
+src/virtio-pci.c
+  98a1b24b3b70ed46 272
+src/pci.h
+  98a1b24b3b70ed46 33,49-52,57
+src/pci.c
+  98a1b24b3b70ed46 55-57,75,77,152-156,159
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.4",
+  "base_commit_sha": "bf42868d8cf473b2277e67c41f9bd0a324c14682",
+  "prompts": {
+    "98a1b24b3b70ed46": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "aecde872-6e17-48f0-ac7b-e00e236ac85c",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Jim Huang",
+      "messages": [],
+      "total_additions": 616,
+      "total_deletions": 17,
+      "accepted_lines": 611,
+      "overriden_lines": 0
+    }
+  }
+}
