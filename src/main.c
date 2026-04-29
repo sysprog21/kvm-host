@@ -77,8 +77,6 @@ int main(int argc, char *argv[])
         }
     }
 
-    set_input_mode();
-
     vm_t vm;
     if (vm_init(&vm) < 0)
         return throw_err("Failed to initialize guest vm");
@@ -98,6 +96,11 @@ int main(int argc, char *argv[])
 
     if (vm_late_init(&vm) < 0)
         return -1;
+
+    /* Switch the terminal to raw mode only once setup has succeeded so that
+     * any error from the load/init paths above is rendered on a normal tty.
+     */
+    set_input_mode();
 
     vm_run(&vm);
     vm_exit(&vm);

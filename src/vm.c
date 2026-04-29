@@ -161,6 +161,20 @@ int vm_run(vm_t *v)
             printf("shutdown\n");
             munmap(run, run_size);
             return 0;
+        case KVM_EXIT_SYSTEM_EVENT: {
+            /* arm64 PSCI SYSTEM_OFF / SYSTEM_RESET land here. SHUTDOWN and
+             * RESET are clean exits from our POV — kvm-host has no reboot
+             * loop, and a guest panic with panic=-1 reaches us as RESET
+             * (indistinguishable from a userspace `reboot`), matching the
+             * x86 reboot=k path that comes back as KVM_EXIT_SHUTDOWN.
+             * CRASH is the one type that signals host-relevant failure
+             * (NMI watchdog, kdump trigger), so propagate it as -1.
+             */
+            uint32_t type = run->system_event.type;
+            printf("system event %u\n", type);
+            munmap(run, run_size);
+            return type == KVM_SYSTEM_EVENT_CRASH ? -1 : 0;
+        }
         default:
             printf("reason: %d\n", run->exit_reason);
             munmap(run, run_size);
