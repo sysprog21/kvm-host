@@ -92,6 +92,13 @@ int vm_arch_cpu_init(vm_t *v)
     if (ioctl(v->vm_fd, KVM_ARM_PREFERRED_TARGET, &vcpu_init) < 0)
         return throw_err("Failed to find perferred CPU type\n");
 
+    /* Enable in-kernel PSCI 0.2 emulation. Without this, a guest panic with
+     * panic=-1 issues SYSTEM_OFF and KVM either ignores the SMC/HVC (so the
+     * guest spins) or signals an undefined-instruction trap. With PSCI on,
+     * the call surfaces as KVM_EXIT_SYSTEM_EVENT to the host loop.
+     */
+    vcpu_init.features[0] |= 1 << KVM_ARM_VCPU_PSCI_0_2;
+
     if (ioctl(v->vcpu_fd, KVM_ARM_VCPU_INIT, &vcpu_init))
         return throw_err("Failed to initialize vCPU\n");
 
@@ -142,9 +149,9 @@ int vm_arch_init_platform_device(vm_t *v)
     if (serial_init(&v->serial, &v->io_bus))
         return throw_err("Failed to init UART device");
 
-    /* Zero virtio_blk_dev so pci_dev_is_registered() observes a clean
-     * state when the user boots without -d. virtio_net_init memsets
-     * inside vm_enable_net, so virtio_net_dev is covered by that path.
+    /* Zero virtio_blk_dev so pci_dev_is_registered() observes a clean state
+     * when the user boots without -d. virtio_net_init memsets inside
+     * vm_enable_net, so virtio_net_dev is covered by that path.
      * x86 already does the same call in its vm_arch_init_platform_device.
      */
     virtio_blk_init(&v->virtio_blk_dev);
@@ -345,6 +352,17 @@ static int generate_fdt(vm_t *v)
     __FDT(property, "interrupt-controller", NULL, 0);
     __FDT(property, "reg", &gic_reg, sizeof(gic_reg));
     __FDT(property_cell, "phandle", FDT_PHANDLE_GIC);
+    __FDT(end_node);
+
+    /* /psci node: lets the guest discover the in-kernel PSCI 0.2 emulator
+     * we requested in vm_arch_cpu_init via KVM_ARM_VCPU_PSCI_0_2. KVM uses
+     * HVC as the conduit on the virtual CPU. Without this node the kernel
+     * doesn't know the firmware interface exists and falls back to a
+     * spinloop on panic.
+     */
+    __FDT(begin_node, "psci");
+    __FDT(property_string, "compatible", "arm,psci-0.2");
+    __FDT(property_string, "method", "hvc");
     __FDT(end_node);
 
     /* /uart node: serial device */

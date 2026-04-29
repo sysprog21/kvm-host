@@ -46,7 +46,39 @@ static void virtio_pci_write_guest_feature(struct virtio_pci_dev *dev)
 
 static void virtio_pci_reset(struct virtio_pci_dev *dev)
 {
-    /* TODO: virtio pci reset */
+    /* Virtio 1.x §2.4: writing 0 to device_status resets the device to its
+     * initial post-power-on state. We clear the negotiated bits the guest
+     * is about to re-write: acked features, ISR, the per-virtq packed-ring
+     * indices, and the common-cfg selector bytes. This is sufficient for a
+     * driver re-probe (reload, kexec) where the guest hasn't yet enabled
+     * any virtqueue.
+     *
+     * We deliberately leave info.enable, desc_ring, and the device/driver
+     * event pointers alone, because the device-emulator workers in
+     * virtio-blk / virtio-net poll those without locking. A full reset that
+     * tears down enabled queues would have to write the per-device stopfd
+     * and pthread_join the workers, which the generic virtio-pci layer has
+     * no handle on — leaving that for a follow-up that adds a
+     * virtio_pci_ops::reset hook.
+     */
+    dev->guest_feature = 0;
+    dev->config.common_cfg.device_feature_select = 0;
+    dev->config.common_cfg.guest_feature_select = 0;
+    dev->config.common_cfg.guest_feature = 0;
+    dev->config.common_cfg.queue_select = 0;
+    __atomic_store_n(&dev->config.isr_cap.isr_status, 0, __ATOMIC_RELEASE);
+
+    for (uint16_t i = 0; i < dev->num_queues; i++) {
+        struct virtq *vq = &dev->vq[i];
+        if (vq->info.enable)
+            continue;
+        vq->info.size = VIRTQ_SIZE;
+        vq->info.desc_addr = 0;
+        vq->info.device_addr = 0;
+        vq->info.driver_addr = 0;
+        vq->next_avail_idx = 0;
+        vq->used_wrap_count = 1;
+    }
 }
 
 static void virtio_pci_write_status(struct virtio_pci_dev *dev)
@@ -62,7 +94,7 @@ static void virtio_pci_select_virtq(struct virtio_pci_dev *dev)
     uint16_t select = dev->config.common_cfg.queue_select;
     struct virtio_pci_common_cfg *config = &dev->config.common_cfg;
 
-    if (select < config->num_queues) {
+    if (select < dev->num_queues) {
         uint64_t offset = offsetof(struct virtio_pci_common_cfg, queue_size);
         memcpy((void *) ((uintptr_t) config + offset), &dev->vq[select].info,
                sizeof(struct virtq_info));
@@ -114,7 +146,7 @@ static void virtio_pci_space_write(struct virtio_pci_dev *dev,
                 offset <= VIRTIO_PCI_COMMON_Q_USEDHI) {
                 uint16_t select = dev->config.common_cfg.queue_select;
                 uint64_t info_offset = offset - VIRTIO_PCI_COMMON_Q_SIZE;
-                if (select < dev->config.common_cfg.num_queues) {
+                if (select < dev->num_queues) {
                     memcpy((void *) ((uintptr_t) &dev->vq[select].info +
                                      info_offset),
                            data, size);
@@ -251,6 +283,7 @@ void virtio_pci_set_virtq(struct virtio_pci_dev *dev,
                           struct virtq *vq,
                           uint16_t num_queues)
 {
+    dev->num_queues = num_queues;
     dev->config.common_cfg.num_queues = num_queues;
     dev->vq = vq;
 }

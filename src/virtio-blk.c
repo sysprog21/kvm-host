@@ -275,7 +275,6 @@ static int virtio_blk_setup(struct virtio_blk_dev *dev, struct diskimg *diskimg)
     }
 
     dev->enable = true;
-    /* FIXME: irq_num should be different to other devs */
     dev->irq_num = VIRTIO_BLK_IRQ;
     dev->diskimg = diskimg;
     dev->config.capacity = diskimg->size >> 9;

@@ -35,6 +35,13 @@ struct virtio_pci_dev {
     struct virtio_pci_notify_cap *notify_cap;
     struct virtio_pci_cap *dev_cfg_cap;
     struct virtq *vq;
+    /* Host-side mirror of the queue count. config.common_cfg.num_queues
+     * lives in guest-writable BAR memory (the unconditional memcpy in
+     * virtio_pci_space_write lets a guest overwrite it), so trusting it
+     * to bound vq[] indexing is an OOB-write primitive. Bounds checks
+     * use this field instead.
+     */
+    uint16_t num_queues;
 };
 
 uint64_t virtio_pci_get_notify_addr(struct virtio_pci_dev *dev,
