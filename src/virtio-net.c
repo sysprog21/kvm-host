@@ -176,9 +176,15 @@ void virtio_net_complete_request_rx(struct virtq *vq)
             return;
         }
         desc->len = virtio_header_len + read_bytes;
-
-        desc->flags ^= (1ULL << VRING_PACKED_DESC_F_USED);
-        dev->virtio_pci_dev.config.isr_cap.isr_status |= VIRTIO_PCI_ISR_QUEUE;
+        /* Single-descriptor chain: head and last alias the same slot, so
+         * the buffer ID the driver wrote in desc->id is already correct.
+         * Release-store flags so the len update lands before the guest
+         * observes the USED flag flip. */
+        uint16_t new_flags =
+            desc->flags ^ (uint16_t) (1U << VRING_PACKED_DESC_F_USED);
+        __atomic_store_n(&desc->flags, new_flags, __ATOMIC_RELEASE);
+        __atomic_fetch_or(&dev->virtio_pci_dev.config.isr_cap.isr_status,
+                          VIRTIO_PCI_ISR_QUEUE, __ATOMIC_RELEASE);
         return;
     }
     vq->guest_event->flags = VRING_PACKED_EVENT_FLAG_DISABLE;
@@ -213,8 +219,14 @@ void virtio_net_complete_request_tx(struct virtq *vq)
             vq->guest_event->flags = VRING_PACKED_EVENT_FLAG_DISABLE;
             return;
         }
-        desc->flags ^= (1ULL << VRING_PACKED_DESC_F_USED);
-        dev->virtio_pci_dev.config.isr_cap.isr_status |= VIRTIO_PCI_ISR_QUEUE;
+        /* TX buffers are device-readable only, so zero bytes were written
+         * to device-writable parts. */
+        desc->len = 0;
+        uint16_t new_flags =
+            desc->flags ^ (uint16_t) (1U << VRING_PACKED_DESC_F_USED);
+        __atomic_store_n(&desc->flags, new_flags, __ATOMIC_RELEASE);
+        __atomic_fetch_or(&dev->virtio_pci_dev.config.isr_cap.isr_status,
+                          VIRTIO_PCI_ISR_QUEUE, __ATOMIC_RELEASE);
         return;
     }
     vq->guest_event->flags = VRING_PACKED_EVENT_FLAG_DISABLE;
