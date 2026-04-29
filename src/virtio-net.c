@@ -153,16 +153,24 @@ void virtio_net_complete_request_rx(struct virtq *vq)
     struct vring_packed_desc *desc;
 
     while ((desc = virtq_get_avail(vq)) != NULL) {
-        uint8_t *data = vm_guest_to_host(v, desc->addr);
+        size_t virtio_header_len = sizeof(struct virtio_net_hdr_v1);
+        /* desc lives in guest-writable memory; snapshot the length we'll
+         * validate and use so a concurrent guest write cannot widen the
+         * access past the bounds check. */
+        uint32_t buf_len = desc->len;
+        uint8_t *data = vm_guest_buf(v, desc->addr, buf_len);
+        if (!data || buf_len < virtio_header_len) {
+            vq->guest_event->flags = VRING_PACKED_EVENT_FLAG_DISABLE;
+            return;
+        }
         struct virtio_net_hdr_v1 *virtio_hdr =
             (struct virtio_net_hdr_v1 *) data;
         memset(virtio_hdr, 0, sizeof(struct virtio_net_hdr_v1));
 
         virtio_hdr->num_buffers = 1;
 
-        size_t virtio_header_len = sizeof(struct virtio_net_hdr_v1);
         ssize_t read_bytes = read(dev->tapfd, data + virtio_header_len,
-                                  desc->len - virtio_header_len);
+                                  buf_len - virtio_header_len);
         if (read_bytes < 0) {
             vq->guest_event->flags = VRING_PACKED_EVENT_FLAG_DISABLE;
             return;
@@ -183,16 +191,18 @@ void virtio_net_complete_request_tx(struct virtq *vq)
     vm_t *v = container_of(dev, vm_t, virtio_net_dev);
     struct vring_packed_desc *desc;
     while ((desc = virtq_get_avail(vq)) != NULL) {
-        uint8_t *data = vm_guest_to_host(v, desc->addr);
         size_t virtio_header_len = sizeof(struct virtio_net_hdr_v1);
+        /* See rx path: snapshot len before bounds check to defeat TOCTOU. */
+        uint32_t buf_len = desc->len;
+        uint8_t *data = vm_guest_buf(v, desc->addr, buf_len);
 
-        if (desc->len < virtio_header_len) {
+        if (!data || buf_len < virtio_header_len) {
             vq->guest_event->flags = VRING_PACKED_EVENT_FLAG_DISABLE;
             return;
         }
 
         uint8_t *actual_data = data + virtio_header_len;
-        size_t actual_data_len = desc->len - virtio_header_len;
+        size_t actual_data_len = buf_len - virtio_header_len;
 
         struct iovec iov[1];
         iov[0].iov_base = actual_data;
