@@ -17,5 +17,6 @@ ssize_t diskimg_write(struct diskimg *diskimg,
                       void *data,
                       off_t offset,
                       size_t size);
+int diskimg_flush(struct diskimg *diskimg);
 int diskimg_init(struct diskimg *diskimg, const char *file_path);
 void diskimg_exit(struct diskimg *diskimg);

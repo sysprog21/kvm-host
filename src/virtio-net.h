@@ -22,6 +22,7 @@ struct virtio_net_dev {
     pthread_t tx_thread;
     bool rx_thread_started;
     bool tx_thread_started;
+    bool tx_wait_for_tap;
     bool enable;
 };
 

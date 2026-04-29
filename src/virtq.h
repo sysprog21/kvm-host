@@ -4,6 +4,10 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+/* Maximum descriptors per packed virtqueue. Also bounds chain length so a
+ * malformed chain cannot loop the device. */
+#define VIRTQ_SIZE 128
+
 struct virtq;
 
 struct virtq_ops {
@@ -36,6 +40,10 @@ struct virtq {
 
 struct vring_packed_desc *virtq_get_avail(struct virtq *vq);
 bool virtq_check_next(struct vring_packed_desc *desc);
+void virtq_publish_used(struct vring_packed_desc *head,
+                        uint16_t id,
+                        uint32_t len);
+void virtq_set_guest_event_flags(struct virtq *vq, uint16_t value);
 void virtq_enable(struct virtq *vq);
 void virtq_disable(struct virtq *vq);
 void virtq_complete_request(struct virtq *vq);

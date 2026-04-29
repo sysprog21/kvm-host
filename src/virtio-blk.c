@@ -70,106 +70,182 @@ static void virtio_blk_enable_vq(struct virtq *vq)
         dev->vq_thread_started = true;
 }
 
-static ssize_t virtio_blk_write(struct virtio_blk_dev *dev,
-                                void *data,
-                                off_t offset,
-                                size_t size)
+/* Snapshot of one descriptor in a chain. We copy the volatile guest fields
+ * once so subsequent decisions cannot tear against a concurrent guest write.
+ */
+struct desc_snap {
+    uint64_t addr;
+    uint32_t len;
+    uint16_t flags;
+    uint16_t id;
+};
+
+/* Walk a chain starting at the supplied head, snapshotting each descriptor
+ * into out[]. cap is the maximum supported chain length; the caller passes
+ * vq->info.size to mirror the "seen >= size" guard in the reference VMM and
+ * defend against a malformed chain. Returns the count on success, or 0 if the
+ * chain is malformed (NULL on virtq_get_avail mid-chain, or longer than cap).
+ * On any return the head has been consumed, so the caller is still obligated
+ * to publish USED.
+ */
+static size_t virtio_blk_walk_chain(struct virtq *vq,
+                                    struct vring_packed_desc *head,
+                                    struct desc_snap *out,
+                                    size_t cap)
 {
-    return diskimg_write(dev->diskimg, data, offset, size);
+    out[0].addr = head->addr;
+    out[0].len = head->len;
+    out[0].flags = head->flags;
+    out[0].id = head->id;
+    size_t n = 1;
+    while (out[n - 1].flags & VRING_DESC_F_NEXT) {
+        if (n >= cap)
+            return 0;
+        struct vring_packed_desc *next = virtq_get_avail(vq);
+        if (!next)
+            return 0;
+        out[n].addr = next->addr;
+        out[n].len = next->len;
+        out[n].flags = next->flags;
+        out[n].id = next->id;
+        n++;
+    }
+    return n;
 }
 
-static ssize_t virtio_blk_read(struct virtio_blk_dev *dev,
-                               void *data,
-                               off_t offset,
-                               size_t size)
+static uint8_t virtio_blk_handle_io(struct virtio_blk_dev *dev,
+                                    vm_t *v,
+                                    const struct virtio_blk_req *req,
+                                    const struct desc_snap *chain,
+                                    size_t n,
+                                    bool needs_write,
+                                    uint32_t *out_written)
 {
-    return diskimg_read(dev->diskimg, data, offset, size);
+    /* sector * 512 must not overflow before any segment is dispatched. */
+    uint64_t cur_off;
+    if (__builtin_mul_overflow(req->sector, (uint64_t) 512, &cur_off))
+        return VIRTIO_BLK_S_IOERR;
+
+    /* writable_total is reported as used.len (uint32_t in the packed-ring
+     * descriptor) plus one byte for the status descriptor we add later, so
+     * accumulate in 64 bits and reject any total that wouldn't fit.
+     */
+    uint64_t writable_total = 0;
+    for (size_t i = 1; i < n - 1; i++) {
+        const struct desc_snap *seg = &chain[i];
+        bool is_writable = (seg->flags & VRING_DESC_F_WRITE) != 0;
+        if (is_writable != needs_write)
+            return VIRTIO_BLK_S_IOERR;
+
+        void *buf = vm_guest_buf(v, seg->addr, seg->len);
+        if (!buf)
+            return VIRTIO_BLK_S_IOERR;
+
+        uint64_t end;
+        if (__builtin_add_overflow(cur_off, (uint64_t) seg->len, &end) ||
+            end > (uint64_t) dev->diskimg->size)
+            return VIRTIO_BLK_S_IOERR;
+
+        ssize_t got;
+        if (needs_write)
+            got = diskimg_read(dev->diskimg, buf, (off_t) cur_off, seg->len);
+        else
+            got = diskimg_write(dev->diskimg, buf, (off_t) cur_off, seg->len);
+        if (got < 0 || (size_t) got != (size_t) seg->len)
+            return VIRTIO_BLK_S_IOERR;
+
+        cur_off += seg->len;
+        if (needs_write) {
+            if (__builtin_add_overflow(writable_total, (uint64_t) seg->len,
+                                       &writable_total) ||
+                writable_total > (uint64_t) UINT32_MAX - 1)
+                return VIRTIO_BLK_S_IOERR;
+        }
+    }
+    *out_written = (uint32_t) writable_total;
+    return VIRTIO_BLK_S_OK;
 }
 
 static void virtio_blk_complete_request(struct virtq *vq)
 {
     struct virtio_blk_dev *dev = (struct virtio_blk_dev *) vq->dev;
     vm_t *v = container_of(dev, vm_t, virtio_blk_dev);
-    uint8_t status;
-    struct vring_packed_desc *desc;
-    struct virtio_blk_req req;
+    struct vring_packed_desc *head;
 
-    /* Wire-format header is type/reserved/sector only; the rest of struct
-     * virtio_blk_req is host bookkeeping and must not be overwritten by the
-     * guest. */
+    /* Wire-format header is type/reserved/sector only; the trailing fields
+     * of struct virtio_blk_req are host bookkeeping.
+     */
     const size_t hdr_sz = offsetof(struct virtio_blk_req, data);
 
-    while ((desc = virtq_get_avail(vq))) {
-        struct vring_packed_desc *used_desc = desc;
-        ssize_t io_bytes = 0;
-
-        void *hdr = vm_guest_buf(v, desc->addr, hdr_sz);
-        if (!hdr || desc->len < hdr_sz)
+    while ((head = virtq_get_avail(vq))) {
+        struct desc_snap chain[VIRTQ_SIZE];
+        /* Walker cap is the array bound, not the guest-controlled
+         * vq->info.size — virtio-pci clamps that on writes, but pass
+         * VIRTQ_SIZE here too as defense in depth against ABI drift.
+         */
+        size_t n = virtio_blk_walk_chain(vq, head, chain, VIRTQ_SIZE);
+        if (n == 0) {
+            /* Malformed chain — buffer ID lives on the last descriptor and we
+             * never reached it. Publishing USED with chain[0].id risks pointing
+             * the driver at an unrelated in-flight chain. Stalling the queue is
+             * the lesser evil.
+             */
             return;
-        memcpy(&req, hdr, hdr_sz);
-        if (req.type == VIRTIO_BLK_T_IN || req.type == VIRTIO_BLK_T_OUT) {
-            if (!virtq_check_next(desc))
-                return;
-            desc = virtq_get_avail(vq);
-            req.data_size = desc->len;
-            req.data = vm_guest_buf(v, desc->addr, req.data_size);
-
-            /* Validate that the request fits in the backing store. Both the
-             * shift (sector*512) and the addition (offset+data_size) must not
-             * overflow, and the end must be within diskimg->size. Any failure
-             * yields VIRTIO_BLK_S_IOERR with no data transferred. */
-            uint64_t off, end;
-            bool io_ok = false;
-            if (req.data && !__builtin_mul_overflow(req.sector, 512, &off) &&
-                !__builtin_add_overflow(off, req.data_size, &end) &&
-                end <= (uint64_t) dev->diskimg->size) {
-                if (req.type == VIRTIO_BLK_T_IN)
-                    io_bytes = virtio_blk_read(dev, req.data, (off_t) off,
-                                               req.data_size);
-                else
-                    io_bytes = virtio_blk_write(dev, req.data, (off_t) off,
-                                                req.data_size);
-                /* A short read/write leaves part of the guest buffer stale,
-                 * so treat anything less than the full request as IOERR. */
-                io_ok = io_bytes >= 0 && (size_t) io_bytes == req.data_size;
-            }
-            status = io_ok ? VIRTIO_BLK_S_OK : VIRTIO_BLK_S_IOERR;
-        } else {
-            status = VIRTIO_BLK_S_UNSUPP;
         }
-        if (!virtq_check_next(desc))
-            return;
-        desc = virtq_get_avail(vq);
-        /* The status descriptor must advertise at least one device-writable
-         * byte; otherwise we'd clobber memory the guest did not offer.
+
+        /* Default response: IOERR using the chain's last-descriptor id (the
+         * buffer ID) and len=1. Single-descriptor chains have head == last
+         * so this is the head's id.
          */
-        if (desc->len < 1)
-            return;
-        req.status = vm_guest_buf(v, desc->addr, 1);
-        if (!req.status)
-            return;
-        *req.status = status;
-        /* used.len is total bytes the device wrote into device-writable buffers
-         * across the chain: the 1-byte status is always written, plus the data
-         * buffer on a successful IN. On any error we report only the status
-         * byte so the guest does not consume stale data.
+        uint8_t status_byte = VIRTIO_BLK_S_IOERR;
+        uint16_t buffer_id = chain[n - 1].id;
+        uint32_t used_len = 1;
+        uint8_t *status_ptr = NULL;
+
+        if (n < 2)
+            goto publish;
+
+        /* Last descriptor of the chain owns the buffer ID and is the status
+         * descriptor; it must be device-writable with at least one byte.
          */
-        size_t written = 1;
-        if (status == VIRTIO_BLK_S_OK && req.type == VIRTIO_BLK_T_IN)
-            written += (size_t) io_bytes;
-        used_desc->len = (uint32_t) written;
-        /* Buffer ID lives on the chain's last descriptor in packed virtqueues;
-         * echo it back into the head/used slot so the driver can match the
-         * completion to its in-flight request.
+        const struct desc_snap *status_desc = &chain[n - 1];
+        if (!(status_desc->flags & VRING_DESC_F_WRITE) || status_desc->len < 1)
+            goto publish;
+        status_ptr = vm_guest_buf(v, status_desc->addr, 1);
+        if (!status_ptr)
+            goto publish;
+
+        /* Header descriptor must be device-readable and span at least the
+         * wire-format header.
          */
-        used_desc->id = desc->id;
-        /* Single-writer slot until USED publishes, so a plain load of the
-         * current flags is safe. Release-store the new value so id and len are
-         * visible to the guest before the USED flag flip.
-         */
-        uint16_t new_flags =
-            used_desc->flags ^ (uint16_t) (1U << VRING_PACKED_DESC_F_USED);
-        __atomic_store_n(&used_desc->flags, new_flags, __ATOMIC_RELEASE);
+        if ((chain[0].flags & VRING_DESC_F_WRITE) || chain[0].len < hdr_sz)
+            goto publish;
+        void *hdr = vm_guest_buf(v, chain[0].addr, hdr_sz);
+        if (!hdr)
+            goto publish;
+
+        struct virtio_blk_req req;
+        memcpy(&req, hdr, hdr_sz);
+
+        if (req.type == VIRTIO_BLK_T_IN || req.type == VIRTIO_BLK_T_OUT) {
+            bool needs_write = req.type == VIRTIO_BLK_T_IN;
+            uint32_t writable = 0;
+            status_byte = virtio_blk_handle_io(dev, v, &req, chain, n,
+                                               needs_write, &writable);
+            used_len = writable + 1;
+        } else if (req.type == VIRTIO_BLK_T_FLUSH) {
+            status_byte = diskimg_flush(dev->diskimg) < 0 ? VIRTIO_BLK_S_IOERR
+                                                          : VIRTIO_BLK_S_OK;
+            used_len = 1;
+        } else {
+            status_byte = VIRTIO_BLK_S_UNSUPP;
+            used_len = 1;
+        }
+
+    publish:
+        if (status_ptr)
+            *status_ptr = status_byte;
+        virtq_publish_used(head, buffer_id, used_len);
         __atomic_fetch_or(&dev->virtio_pci_dev.config.isr_cap.isr_status,
                           VIRTIO_PCI_ISR_QUEUE, __ATOMIC_RELEASE);
     }
@@ -225,7 +301,11 @@ int virtio_blk_init_pci(struct virtio_blk_dev *virtio_blk_dev,
     virtio_pci_set_pci_hdr(dev, VIRTIO_PCI_DEVICE_ID_BLK, VIRTIO_BLK_PCI_CLASS,
                            virtio_blk_dev->irq_num);
     virtio_pci_set_virtq(dev, virtio_blk_dev->vq, VIRTIO_BLK_VIRTQ_NUM);
-    virtio_pci_add_feature(dev, 0);
+    /* FLUSH is required for guest fsync to be honored: with the bit clear the
+     * Linux driver runs in writeback-without-barrier mode and a host crash can
+     * lose data the guest believed durable.
+     */
+    virtio_pci_add_feature(dev, 1ULL << VIRTIO_BLK_F_FLUSH);
     virtio_pci_enable(dev);
     return 0;
 }
@@ -245,6 +325,10 @@ void virtio_blk_exit(struct virtio_blk_dev *dev)
         throw_err("Failed to wake virtio-blk worker");
     if (dev->vq_thread_started)
         pthread_join(dev->vq_avail_thread, NULL);
+    /* Honor guest barrier semantics on clean shutdown: writes that came back as
+     * VIRTIO_BLK_S_OK could still be in the host page cache.
+     */
+    diskimg_flush(dev->diskimg);
     diskimg_exit(dev->diskimg);
     virtio_pci_exit(&dev->virtio_pci_dev);
     close(dev->irqfd);

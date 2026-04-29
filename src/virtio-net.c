@@ -50,14 +50,26 @@ static bool virtio_net_poll_tx(struct virtio_net_dev *dev)
 {
     struct pollfd pollfds[] = {
         [0] = {.fd = dev->tx_ioeventfd, .events = POLLIN},
-        [1] = {.fd = dev->tapfd, .events = POLLOUT},
-        [2] = {.fd = dev->stopfd, .events = POLLIN},
+        [1] = {.fd = dev->stopfd, .events = POLLIN},
+        [2] = {.fd = dev->tapfd, .events = dev->tx_wait_for_tap ? POLLOUT : 0},
     };
 
     int ret = poll(pollfds, 3, -1);
+    if (ret <= 0 || (pollfds[1].revents & POLLIN))
+        return false;
 
-    return ret > 0 && (pollfds[0].revents & POLLIN) &&
-           (pollfds[1].revents & POLLOUT) && !(pollfds[2].revents & POLLIN);
+    bool tx_kick = pollfds[0].revents & POLLIN;
+    bool tap_writable = pollfds[2].revents & POLLOUT;
+
+    if (tx_kick) {
+        /* Drain the level-triggered ioeventfd so the next poll(2) blocks
+         * until the guest kicks again. */
+        uint64_t n;
+        ssize_t ignored = read(dev->tx_ioeventfd, &n, sizeof(n));
+        (void) ignored;
+    }
+
+    return tx_kick || tap_writable;
 }
 
 static void *virtio_net_vq_avail_handler_rx(void *arg)
@@ -66,7 +78,7 @@ static void *virtio_net_vq_avail_handler_rx(void *arg)
     struct virtio_net_dev *dev = (struct virtio_net_dev *) vq->dev;
 
     while (!virtio_net_stop_requested(dev)) {
-        vq->guest_event->flags = VRING_PACKED_EVENT_FLAG_ENABLE;
+        virtq_set_guest_event_flags(vq, VRING_PACKED_EVENT_FLAG_ENABLE);
         if (virtio_net_poll_rx(dev))
             virtq_handle_avail(vq);
     }
@@ -79,7 +91,7 @@ static void *virtio_net_vq_avail_handler_tx(void *arg)
     struct virtio_net_dev *dev = (struct virtio_net_dev *) vq->dev;
 
     while (!virtio_net_stop_requested(dev)) {
-        vq->guest_event->flags = VRING_PACKED_EVENT_FLAG_ENABLE;
+        virtq_set_guest_event_flags(vq, VRING_PACKED_EVENT_FLAG_ENABLE);
         if (virtio_net_poll_tx(dev))
             virtq_handle_avail(vq);
     }
@@ -146,91 +158,236 @@ static void virtio_net_notify_used_tx(struct virtq *vq)
         throw_err("Failed to write the irqfd");
 }
 
+/* Snapshot of one descriptor in a chain, copied once so guest-side races can
+ * not tear our subsequent decisions.
+ */
+struct net_desc_snap {
+    uint64_t addr;
+    uint32_t len;
+    uint16_t flags;
+    uint16_t id;
+};
+
+/* Walk the chain rooted at head, copying each descriptor into out[]. cap bounds
+ * the chain length. Returns the count on success or 0 on malformed chain (NULL
+ * mid-walk or chain longer than cap). The head has been consumed regardless, so
+ * the caller must publish USED.
+ */
+static size_t net_walk_chain(struct virtq *vq,
+                             struct vring_packed_desc *head,
+                             struct net_desc_snap *out,
+                             size_t cap)
+{
+    out[0].addr = head->addr;
+    out[0].len = head->len;
+    out[0].flags = head->flags;
+    out[0].id = head->id;
+    size_t n = 1;
+    while (out[n - 1].flags & VRING_DESC_F_NEXT) {
+        if (n >= cap)
+            return 0;
+        struct vring_packed_desc *next = virtq_get_avail(vq);
+        if (!next)
+            return 0;
+        out[n].addr = next->addr;
+        out[n].len = next->len;
+        out[n].flags = next->flags;
+        out[n].id = next->id;
+        n++;
+    }
+    return n;
+}
+
 void virtio_net_complete_request_rx(struct virtq *vq)
 {
     struct virtio_net_dev *dev = (struct virtio_net_dev *) vq->dev;
     vm_t *v = container_of(dev, vm_t, virtio_net_dev);
-    struct vring_packed_desc *desc;
+    struct vring_packed_desc *head;
+    const size_t hdr_len = sizeof(struct virtio_net_hdr_v1);
 
-    while ((desc = virtq_get_avail(vq)) != NULL) {
-        size_t virtio_header_len = sizeof(struct virtio_net_hdr_v1);
-        /* desc lives in guest-writable memory; snapshot the length we'll
-         * validate and use so a concurrent guest write cannot widen the
-         * access past the bounds check. */
-        uint32_t buf_len = desc->len;
-        uint8_t *data = vm_guest_buf(v, desc->addr, buf_len);
-        if (!data || buf_len < virtio_header_len) {
-            vq->guest_event->flags = VRING_PACKED_EVENT_FLAG_DISABLE;
+    while ((head = virtq_get_avail(vq))) {
+        struct net_desc_snap chain[VIRTQ_SIZE];
+        /* See virtio-blk for why we cap at VIRTQ_SIZE rather than the
+         * guest-controlled vq->info.size.
+         */
+        size_t n = net_walk_chain(vq, head, chain, VIRTQ_SIZE);
+        if (n == 0) {
+            /* Malformed chain — buffer ID lives on the last descriptor and we
+             * never reached it. Publishing USED with chain[0].id (which the
+             * driver may have left stale on a multi-desc head) could cause the
+             * driver to look up the wrong in-flight request and
+             * advance next_used_idx by an unrelated chain length. Stalling is
+             * the lesser evil; a misbehaving driver hangs only itself.
+             */
+            virtq_set_guest_event_flags(vq, VRING_PACKED_EVENT_FLAG_DISABLE);
             return;
         }
-        struct virtio_net_hdr_v1 *virtio_hdr =
-            (struct virtio_net_hdr_v1 *) data;
-        memset(virtio_hdr, 0, sizeof(struct virtio_net_hdr_v1));
+        uint16_t buffer_id = chain[n - 1].id;
+        uint32_t used_len = 0;
 
-        virtio_hdr->num_buffers = 1;
-
-        ssize_t read_bytes = read(dev->tapfd, data + virtio_header_len,
-                                  buf_len - virtio_header_len);
-        if (read_bytes < 0) {
-            vq->guest_event->flags = VRING_PACKED_EVENT_FLAG_DISABLE;
-            return;
+        /* Build iov over device-writable buffers; reject chains that mix
+         * directions (per RX rules every descriptor must be writable).
+         */
+        struct iovec iov[VIRTQ_SIZE];
+        size_t iov_n = 0;
+        size_t writable_total = 0;
+        bool ok = true;
+        for (size_t i = 0; i < n; i++) {
+            if (!(chain[i].flags & VRING_DESC_F_WRITE)) {
+                ok = false;
+                break;
+            }
+            void *buf = vm_guest_buf(v, chain[i].addr, chain[i].len);
+            if (!buf) {
+                ok = false;
+                break;
+            }
+            iov[iov_n].iov_base = buf;
+            iov[iov_n].iov_len = chain[i].len;
+            iov_n++;
+            writable_total += chain[i].len;
         }
-        desc->len = virtio_header_len + read_bytes;
-        /* Single-descriptor chain: head and last alias the same slot, so
-         * the buffer ID the driver wrote in desc->id is already correct.
-         * Release-store flags so the len update lands before the guest
-         * observes the USED flag flip. */
-        uint16_t new_flags =
-            desc->flags ^ (uint16_t) (1U << VRING_PACKED_DESC_F_USED);
-        __atomic_store_n(&desc->flags, new_flags, __ATOMIC_RELEASE);
+        if (!ok || writable_total < hdr_len)
+            goto rx_publish;
+
+        /* Reserve the leading hdr_len bytes for the virtio-net header, which
+         * the device fills in itself. Walk the iov advancing past the header
+         * so readv writes the frame starting right after it; zero-len entries
+         * are fine to leave in the array.
+         */
+        struct virtio_net_hdr_v1 net_hdr = {0};
+        /* Without VIRTIO_NET_F_MRG_RXBUF the driver always sees one buffer per
+         * packet, so num_buffers is always 1 here.
+         */
+        net_hdr.num_buffers = 1;
+
+        size_t hdr_remaining = hdr_len;
+        size_t hdr_offset = 0;
+        for (size_t i = 0; i < iov_n && hdr_remaining > 0; i++) {
+            size_t take =
+                iov[i].iov_len < hdr_remaining ? iov[i].iov_len : hdr_remaining;
+            memcpy(iov[i].iov_base, (uint8_t *) &net_hdr + hdr_offset, take);
+            iov[i].iov_base = (uint8_t *) iov[i].iov_base + take;
+            iov[i].iov_len -= take;
+            hdr_remaining -= take;
+            hdr_offset += take;
+        }
+
+        ssize_t got = readv(dev->tapfd, iov, (int) iov_n);
+        if (got < 0)
+            goto rx_publish;
+        used_len = (uint32_t) hdr_len + (uint32_t) got;
+
+    rx_publish:
+        virtq_publish_used(head, buffer_id, used_len);
         __atomic_fetch_or(&dev->virtio_pci_dev.config.isr_cap.isr_status,
                           VIRTIO_PCI_ISR_QUEUE, __ATOMIC_RELEASE);
+        if (used_len == 0) {
+            /* Wedged — back off so we don't hot-loop on a broken chain. */
+            virtq_set_guest_event_flags(vq, VRING_PACKED_EVENT_FLAG_DISABLE);
+            return;
+        }
+        /* Process exactly one chain per call so the worker can re-poll the tap
+         * before draining the next packet.
+         */
         return;
     }
-    vq->guest_event->flags = VRING_PACKED_EVENT_FLAG_DISABLE;
-    return;
+    virtq_set_guest_event_flags(vq, VRING_PACKED_EVENT_FLAG_DISABLE);
 }
 
 void virtio_net_complete_request_tx(struct virtq *vq)
 {
     struct virtio_net_dev *dev = (struct virtio_net_dev *) vq->dev;
     vm_t *v = container_of(dev, vm_t, virtio_net_dev);
-    struct vring_packed_desc *desc;
-    while ((desc = virtq_get_avail(vq)) != NULL) {
-        size_t virtio_header_len = sizeof(struct virtio_net_hdr_v1);
-        /* See rx path: snapshot len before bounds check to defeat TOCTOU. */
-        uint32_t buf_len = desc->len;
-        uint8_t *data = vm_guest_buf(v, desc->addr, buf_len);
+    struct vring_packed_desc *head;
+    const size_t hdr_len = sizeof(struct virtio_net_hdr_v1);
 
-        if (!data || buf_len < virtio_header_len) {
-            vq->guest_event->flags = VRING_PACKED_EVENT_FLAG_DISABLE;
+    /* We have been woken up; clear the retry-pending flag here so every
+     * exit path (publish-USED, malformed-chain return, queue-empty break)
+     * leaves it false. The transient writev() EAGAIN path below is the
+     * only one that sets it back to true, and it returns immediately.
+     */
+    dev->tx_wait_for_tap = false;
+
+    while (true) {
+        uint16_t avail_idx = vq->next_avail_idx;
+        bool used_wrap_count = vq->used_wrap_count;
+        if (!(head = virtq_get_avail(vq)))
+            break;
+        struct net_desc_snap chain[VIRTQ_SIZE];
+        size_t n = net_walk_chain(vq, head, chain, VIRTQ_SIZE);
+        if (n == 0) {
+            /* See RX path: don't publish USED with a stale id. */
+            virtq_set_guest_event_flags(vq, VRING_PACKED_EVENT_FLAG_DISABLE);
             return;
         }
+        uint16_t buffer_id = chain[n - 1].id;
 
-        uint8_t *actual_data = data + virtio_header_len;
-        size_t actual_data_len = buf_len - virtio_header_len;
-
-        struct iovec iov[1];
-        iov[0].iov_base = actual_data;
-        iov[0].iov_len = actual_data_len;
-
-        ssize_t write_bytes = writev(dev->tapfd, iov, 1);
-        if (write_bytes < 0) {
-            vq->guest_event->flags = VRING_PACKED_EVENT_FLAG_DISABLE;
-            return;
+        /* Build iov over device-readable buffers; reject chains that mix
+         * directions (per TX rules every descriptor must be readable).
+         */
+        struct iovec iov[VIRTQ_SIZE];
+        size_t iov_n = 0;
+        size_t total = 0;
+        bool ok = true;
+        for (size_t i = 0; i < n; i++) {
+            if (chain[i].flags & VRING_DESC_F_WRITE) {
+                ok = false;
+                break;
+            }
+            void *buf = vm_guest_buf(v, chain[i].addr, chain[i].len);
+            if (!buf) {
+                ok = false;
+                break;
+            }
+            iov[iov_n].iov_base = buf;
+            iov[iov_n].iov_len = chain[i].len;
+            iov_n++;
+            total += chain[i].len;
         }
-        /* TX buffers are device-readable only, so zero bytes were written
-         * to device-writable parts. */
-        desc->len = 0;
-        uint16_t new_flags =
-            desc->flags ^ (uint16_t) (1U << VRING_PACKED_DESC_F_USED);
-        __atomic_store_n(&desc->flags, new_flags, __ATOMIC_RELEASE);
+        if (!ok || total < hdr_len)
+            goto tx_publish;
+
+        /* Strip the virtio-net header from the front of the iov before
+         * handing it to writev — the TAP device wants raw frame bytes.
+         */
+        size_t skip_remaining = hdr_len;
+        for (size_t i = 0; i < iov_n && skip_remaining > 0; i++) {
+            size_t take = iov[i].iov_len < skip_remaining ? iov[i].iov_len
+                                                          : skip_remaining;
+            iov[i].iov_base = (uint8_t *) iov[i].iov_base + take;
+            iov[i].iov_len -= take;
+            skip_remaining -= take;
+        }
+
+        ssize_t wrote = writev(dev->tapfd, iov, (int) iov_n);
+        if (wrote < 0) {
+            if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR) {
+                /* Keep the chain in-flight and retry it once the TAP fd is
+                 * writable again instead of dropping the guest packet.
+                 */
+                vq->next_avail_idx = avail_idx;
+                vq->used_wrap_count = used_wrap_count;
+                dev->tx_wait_for_tap = true;
+                virtq_set_guest_event_flags(vq,
+                                            VRING_PACKED_EVENT_FLAG_DISABLE);
+                return;
+            }
+        }
+
+    tx_publish:
+        /* TX buffers are device-readable only — no bytes were written to
+         * device-writable buffers, so used.len = 0.
+         */
+        virtq_publish_used(head, buffer_id, 0);
         __atomic_fetch_or(&dev->virtio_pci_dev.config.isr_cap.isr_status,
                           VIRTIO_PCI_ISR_QUEUE, __ATOMIC_RELEASE);
-        return;
+        /* Drain the entire virtq in one wakeup. The ioeventfd was already read
+         * in poll_tx, so if we returned early any remaining chains would sit
+         * untouched until the next guest kick.
+         */
     }
-    vq->guest_event->flags = VRING_PACKED_EVENT_FLAG_DISABLE;
-    return;
+    virtq_set_guest_event_flags(vq, VRING_PACKED_EVENT_FLAG_DISABLE);
 }
 
 static struct virtq_ops virtio_net_ops[VIRTIO_NET_VIRTQ_NUM] = {
