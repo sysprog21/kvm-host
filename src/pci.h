@@ -30,7 +30,7 @@ struct pci_dev {
     void *hdr;
     uint32_t bar_size[6];
     bool bar_active[6];
-    bool bar_is_io_space[6];
+    uint32_t bar_layout[6];
     struct dev space_dev[6];
     struct dev config_dev;
     struct bus *io_bus;
@@ -46,10 +46,15 @@ struct pci {
     struct dev pci_mmio_dev;
 };
 
+/*
+ * Configure a PCI BAR. @layout is a bitmask of PCI_BASE_ADDRESS_* flags
+ * from <linux/pci_regs.h> (space, mem type, prefetch). The non-address
+ * bits are preserved across guest BAR sizing probes.
+ */
 void pci_set_bar(struct pci_dev *dev,
                  uint8_t bar,
                  uint32_t bar_size,
-                 bool is_io_space,
+                 uint32_t layout,
                  dev_io_fn do_io);
 void pci_set_status(struct pci_dev *dev, uint16_t status);
 void pci_dev_register(struct pci_dev *dev);
