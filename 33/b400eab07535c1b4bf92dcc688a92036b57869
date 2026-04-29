@@ -1,0 +1,29 @@
+src/virtio-blk.c
+  551f0e25b1283156 106,115-136,143-147,153-154,156
+src/vm.c
+  551f0e25b1283156 179-184
+src/vm.h
+  551f0e25b1283156 38
+src/virtio-net.c
+  551f0e25b1283156 156-165,173,195-197,199,205
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.4",
+  "base_commit_sha": "33b400eab07535c1b4bf92dcc688a92036b57869",
+  "prompts": {
+    "551f0e25b1283156": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "20f4e6a6-e555-41c7-9232-717174d07cf1",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": null,
+      "messages": [],
+      "total_additions": 33102,
+      "total_deletions": 27,
+      "accepted_lines": 33094,
+      "overriden_lines": 0
+    }
+  }
+}
