@@ -141,23 +141,37 @@ static void virtio_blk_complete_request(struct virtq *vq)
             return;
         desc = virtq_get_avail(vq);
         /* The status descriptor must advertise at least one device-writable
-         * byte; otherwise we'd clobber memory the guest did not offer. */
+         * byte; otherwise we'd clobber memory the guest did not offer.
+         */
         if (desc->len < 1)
             return;
         req.status = vm_guest_buf(v, desc->addr, 1);
         if (!req.status)
             return;
         *req.status = status;
-        /* used.len is total bytes the device wrote into device-writable
-         * buffers across the chain: the 1-byte status is always written, plus
-         * the data buffer on a successful IN. On any error we report only the
-         * status byte so the guest does not consume stale data. */
+        /* used.len is total bytes the device wrote into device-writable buffers
+         * across the chain: the 1-byte status is always written, plus the data
+         * buffer on a successful IN. On any error we report only the status
+         * byte so the guest does not consume stale data.
+         */
         size_t written = 1;
         if (status == VIRTIO_BLK_S_OK && req.type == VIRTIO_BLK_T_IN)
             written += (size_t) io_bytes;
         used_desc->len = (uint32_t) written;
-        used_desc->flags ^= (1ULL << VRING_PACKED_DESC_F_USED);
-        dev->virtio_pci_dev.config.isr_cap.isr_status |= VIRTIO_PCI_ISR_QUEUE;
+        /* Buffer ID lives on the chain's last descriptor in packed virtqueues;
+         * echo it back into the head/used slot so the driver can match the
+         * completion to its in-flight request.
+         */
+        used_desc->id = desc->id;
+        /* Single-writer slot until USED publishes, so a plain load of the
+         * current flags is safe. Release-store the new value so id and len are
+         * visible to the guest before the USED flag flip.
+         */
+        uint16_t new_flags =
+            used_desc->flags ^ (uint16_t) (1U << VRING_PACKED_DESC_F_USED);
+        __atomic_store_n(&used_desc->flags, new_flags, __ATOMIC_RELEASE);
+        __atomic_fetch_or(&dev->virtio_pci_dev.config.isr_cap.isr_status,
+                          VIRTIO_PCI_ISR_QUEUE, __ATOMIC_RELEASE);
     }
 }
 

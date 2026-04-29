@@ -139,9 +139,16 @@ static void virtio_pci_space_read(struct virtio_pci_dev *dev,
                                   uint8_t size)
 {
     if (offset < offsetof(struct virtio_pci_config, dev_cfg)) {
-        memcpy(data, (void *) ((uintptr_t) &dev->config + offset), size);
-        if (offset == offsetof(struct virtio_pci_config, isr_cap)) {
-            dev->config.isr_cap.isr_status = 0;
+        if (offset == offsetof(struct virtio_pci_config, isr_cap) &&
+            size <= sizeof(dev->config.isr_cap.isr_status)) {
+            /* Read-and-clear in one atomic step so a worker thread's
+             * concurrent fetch_or on isr_status cannot be lost between the
+             * load and the zero-back. Acquire pairs with workers' release. */
+            uint32_t status = __atomic_exchange_n(
+                &dev->config.isr_cap.isr_status, 0, __ATOMIC_ACQUIRE);
+            memcpy(data, &status, size);
+        } else {
+            memcpy(data, (void *) ((uintptr_t) &dev->config + offset), size);
         }
     } else {
         /* dev config read */

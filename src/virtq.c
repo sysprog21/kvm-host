@@ -40,13 +40,16 @@ bool virtq_check_next(struct vring_packed_desc *desc)
 struct vring_packed_desc *virtq_get_avail(struct virtq *vq)
 {
     struct vring_packed_desc *desc = &vq->desc_ring[vq->next_avail_idx];
-    uint16_t flags = desc->flags;
+    /* Acquire pairs with the driver's release when it published the descriptor.
+     * After we observe AVAIL set, every other field of the descriptor
+     * (addr/len/id/...) is guaranteed to be visible.
+     */
+    uint16_t flags = __atomic_load_n(&desc->flags, __ATOMIC_ACQUIRE);
     bool avail = flags & (1ULL << VRING_PACKED_DESC_F_AVAIL);
     bool used = flags & (1ULL << VRING_PACKED_DESC_F_USED);
 
-    if (avail != vq->used_wrap_count || used == vq->used_wrap_count) {
+    if (avail != vq->used_wrap_count || used == vq->used_wrap_count)
         return NULL;
-    }
     vq->next_avail_idx++;
     if (vq->next_avail_idx >= vq->info.size) {
         vq->next_avail_idx -= vq->info.size;
@@ -60,6 +63,11 @@ void virtq_handle_avail(struct virtq *vq)
     if (!vq->info.enable)
         return;
     virtq_complete_request(vq);
-    if (vq->guest_event->flags == VRING_PACKED_EVENT_FLAG_ENABLE)
+    /* Driver-side suppression flag is shared memory; acquire so we don't
+     * re-order the read past the completion writes above.
+     */
+    uint16_t evt_flags =
+        __atomic_load_n(&vq->guest_event->flags, __ATOMIC_ACQUIRE);
+    if (evt_flags == VRING_PACKED_EVENT_FLAG_ENABLE)
         virtq_notify_used(vq);
 }
