@@ -176,6 +176,15 @@ void *vm_guest_to_host(vm_t *v, uint64_t guest)
     return (void *) ((uintptr_t) v->mem + guest - RAM_BASE);
 }
 
+void *vm_guest_buf(vm_t *v, uint64_t guest, size_t len)
+{
+    uint64_t end;
+    if (guest < RAM_BASE || __builtin_add_overflow(guest, len, &end) ||
+        end > RAM_BASE + RAM_SIZE)
+        return NULL;
+    return (void *) ((uintptr_t) v->mem + guest - RAM_BASE);
+}
+
 void vm_irqfd_register(vm_t *v, int fd, int gsi, int flags)
 {
     struct kvm_irqfd irqfd = {

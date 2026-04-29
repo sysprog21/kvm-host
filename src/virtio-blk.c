@@ -103,7 +103,7 @@ static void virtio_blk_complete_request(struct virtq *vq)
         struct vring_packed_desc *used_desc = desc;
         ssize_t io_bytes = 0;
 
-        void *hdr = vm_guest_to_host(v, desc->addr);
+        void *hdr = vm_guest_buf(v, desc->addr, hdr_sz);
         if (!hdr || desc->len < hdr_sz)
             return;
         memcpy(&req, hdr, hdr_sz);
@@ -112,33 +112,48 @@ static void virtio_blk_complete_request(struct virtq *vq)
                 return;
             desc = virtq_get_avail(vq);
             req.data_size = desc->len;
-            req.data = vm_guest_to_host(v, desc->addr);
-            if (!req.data)
-                return;
+            req.data = vm_guest_buf(v, desc->addr, req.data_size);
 
-            if (req.type == VIRTIO_BLK_T_IN)
-                io_bytes = virtio_blk_read(dev, req.data, req.sector << 9,
-                                           req.data_size);
-            else
-                io_bytes = virtio_blk_write(dev, req.data, req.sector << 9,
-                                            req.data_size);
-
-            status = io_bytes < 0 ? VIRTIO_BLK_S_IOERR : VIRTIO_BLK_S_OK;
+            /* Validate that the request fits in the backing store. Both the
+             * shift (sector*512) and the addition (offset+data_size) must not
+             * overflow, and the end must be within diskimg->size. Any failure
+             * yields VIRTIO_BLK_S_IOERR with no data transferred. */
+            uint64_t off, end;
+            bool io_ok = false;
+            if (req.data && !__builtin_mul_overflow(req.sector, 512, &off) &&
+                !__builtin_add_overflow(off, req.data_size, &end) &&
+                end <= (uint64_t) dev->diskimg->size) {
+                if (req.type == VIRTIO_BLK_T_IN)
+                    io_bytes = virtio_blk_read(dev, req.data, (off_t) off,
+                                               req.data_size);
+                else
+                    io_bytes = virtio_blk_write(dev, req.data, (off_t) off,
+                                                req.data_size);
+                /* A short read/write leaves part of the guest buffer stale,
+                 * so treat anything less than the full request as IOERR. */
+                io_ok = io_bytes >= 0 && (size_t) io_bytes == req.data_size;
+            }
+            status = io_ok ? VIRTIO_BLK_S_OK : VIRTIO_BLK_S_IOERR;
         } else {
             status = VIRTIO_BLK_S_UNSUPP;
         }
         if (!virtq_check_next(desc))
             return;
         desc = virtq_get_avail(vq);
-        req.status = vm_guest_to_host(v, desc->addr);
+        /* The status descriptor must advertise at least one device-writable
+         * byte; otherwise we'd clobber memory the guest did not offer. */
+        if (desc->len < 1)
+            return;
+        req.status = vm_guest_buf(v, desc->addr, 1);
         if (!req.status)
             return;
         *req.status = status;
         /* used.len is total bytes the device wrote into device-writable
          * buffers across the chain: the 1-byte status is always written, plus
-         * io_bytes of data on a successful IN. */
+         * the data buffer on a successful IN. On any error we report only the
+         * status byte so the guest does not consume stale data. */
         size_t written = 1;
-        if (req.type == VIRTIO_BLK_T_IN && io_bytes > 0)
+        if (status == VIRTIO_BLK_S_OK && req.type == VIRTIO_BLK_T_IN)
             written += (size_t) io_bytes;
         used_desc->len = (uint32_t) written;
         used_desc->flags ^= (1ULL << VRING_PACKED_DESC_F_USED);
