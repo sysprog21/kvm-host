@@ -32,6 +32,7 @@ OBJS := \
 	virtio-blk.o \
 	virtio-net.o \
 	diskimg.o \
+	seccomp.o \
 	main.o
 
 ifeq ($(ARCH), x86_64)
@@ -66,9 +67,15 @@ $(OUT)/ext4.img:
 	$(Q)dd if=/dev/zero of=$@ bs=4k count=600
 	$(Q)mkfs.ext4 -F $@
 
+# KVM_HOST_FLAGS forwards extra flags to the binary so CI and developers
+# can opt into --seccomp without duplicating the recipe. Empty by default
+# to keep `make check` matching the documented invocation.
+KVM_HOST_FLAGS ?=
+
 check: $(BIN) $(LINUX_IMG) $(ROOTFS_IMG) $(OUT)/ext4.img
 	$(VECHO) "\nOnce the message 'Kernel panic' appears, press Ctrl-C to exit\n\n"
-	$(Q)sudo $(BIN) -k $(LINUX_IMG) -i $(ROOTFS_IMG) -d $(OUT)/ext4.img
+	$(Q)sudo $(BIN) -k $(LINUX_IMG) -i $(ROOTFS_IMG) -d $(OUT)/ext4.img \
+	    $(KVM_HOST_FLAGS)
 
 clean:
 	$(VECHO) "Cleaning...\n"

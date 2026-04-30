@@ -185,6 +185,19 @@ jobs:
       - name: boot test
         run: .ci/autorun.sh
         timeout-minutes: 5
+      # Smoke-test the --seccomp opt-in path on the same nested-KVM runner.
+      # The smoke test only waits for the "Linux version " banner before
+      # sending Ctrl-A x, but reaching the banner already exercises
+      # prctl(PR_SET_NO_NEW_PRIVS), seccomp(2)+TSYNC install over the
+      # already-running serial worker, and the early KVM_RUN dispatch
+      # under the filter. A regression that drops a steady-state syscall
+      # from src/seccomp.c's allowlist surfaces here as a SIGSYS before
+      # the banner appears.
+      - name: boot test (seccomp)
+        run: .ci/autorun.sh
+        env:
+          KVM_HOST_FLAGS: --seccomp
+        timeout-minutes: 5
 
   # arm64 host build: configs/linux-arm64.config has no prebuilt path and
   # the GitHub-hosted ubuntu-24.04-arm runners (Cobalt 100) do NOT expose

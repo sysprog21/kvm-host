@@ -43,13 +43,30 @@ make check
 ### Start Emulator
 
 ```
-$ build/kvm-host -k bzImage [-i initrd] [-d disk-image]
+$ build/kvm-host -k bzImage [-i initrd] [-d disk-image] [--seccomp]
 ```
 
 `bzImage` is the path to linux kernel bzImage. The bzImage file is in a specific format,
 containing concatenated `bootsect.o + setup.o + misc.o + piggy.o`. `initrd` is the path to
 initial RAM disk image, which is an optional argument.
 `disk-image` is the path to disk image which can be mounted as a block device via virtio. For the reference Linux guest, ext4 filesystem is used for disk image.
+
+`--seccomp` is an opt-in defense-in-depth flag that installs a seccomp BPF
+allowlist over the steady-state KVM_RUN loop. Once active, only the
+syscalls that the vcpu, virtio-blk, virtio-net, and serial workers need
+are permitted; anything else (including a memory-corruption RCE in
+device emulation pivoting to `execve`, `open`, or `socket`) terminates
+the process with `SIGSYS`. The filter is applied via `seccomp(2)` with
+`SECCOMP_FILTER_FLAG_TSYNC` so already-running worker threads inherit
+it. The flag is off by default so existing test and development
+workflows are unaffected. CI exercises both paths
+(`.github/workflows/main.yml`).
+
+To run `make check` with the filter enabled:
+
+```shell
+$ make KVM_HOST_FLAGS=--seccomp check
+```
 
 ### Exit Emulator
 
